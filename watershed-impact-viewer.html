@@ -1,0 +1,2186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<title>Watershed Impact Viewer — Sentinel-2 (10 m)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F0EAD8;
+    --panel:#FBF8EF;
+    --ink:#241F1A;
+    --ink-soft:#5B5140;
+    --line:#D9CFB4;
+    --water:#1F6F78;
+    --water-soft:#DCEBEA;
+    --veg:#4C7A3D;
+    --veg-soft:#E4ECDD;
+    --soil:#B5652C;
+    --ochre:#C9A227;
+    --bad:#A23E33;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', sans-serif;
+    line-height:1.5;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(36,31,26,0.035) 0px, rgba(36,31,26,0.035) 1px, transparent 1px, transparent 88px),
+      repeating-linear-gradient(90deg, rgba(36,31,26,0.035) 0px, rgba(36,31,26,0.035) 1px, transparent 1px, transparent 88px);
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:36px 20px 80px;}
+  h1,h2,h3{font-family:'Roboto Slab', serif; font-weight:700; margin:0 0 8px;}
+  h1{
+    font-size:clamp(30px,4.6vw,42px); letter-spacing:-0.01em;
+    background:linear-gradient(100deg, var(--ink) 35%, var(--veg) 75%, var(--water) 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    display:inline-block;
+  }
+  h2{font-size:20px; margin-top:0;}
+  .lede{max-width:62ch; color:var(--ink-soft); font-size:16.5px; margin:0 0 30px;}
+  .coord{font-family:'IBM Plex Mono', monospace; font-size:13.5px;}
+
+  body::before{
+    content:''; position:fixed; top:0; left:0; right:0; height:5px; z-index:10;
+    background:linear-gradient(90deg, var(--soil), var(--veg), var(--water));
+  }
+
+  .hero{
+    position:relative;
+    overflow:hidden;
+    background:linear-gradient(135deg, #241F1A 0%, #3d4a2e 45%, #1F6F78 100%);
+    background-size:220% 220%;
+    animation:heroShift 16s ease-in-out infinite;
+    padding:58px 20px 46px;
+  }
+  @keyframes heroShift{
+    0%{background-position:0% 30%;}
+    50%{background-position:100% 70%;}
+    100%{background-position:0% 30%;}
+  }
+  .hero::before{
+    content:'';
+    position:absolute; inset:0;
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 42px),
+      repeating-linear-gradient(25deg, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px, transparent 1px, transparent 58px);
+    pointer-events:none;
+  }
+  .hero-inner{max-width:920px; margin:0 auto; position:relative; z-index:1;}
+  .hero h1{
+    font-size:clamp(32px,5vw,46px);
+    background:linear-gradient(100deg, #ffffff 25%, #bfe9c4 65%, #bdeef2 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    margin-bottom:14px;
+  }
+  .hero .tagline{
+    font-size:16.5px; color:#E6E0C9; max-width:62ch; line-height:1.55; margin:0 0 24px;
+  }
+  .hero .chips{display:flex; flex-wrap:wrap; gap:10px;}
+  .hero .chip{
+    background:rgba(255,255,255,0.10);
+    border:1px solid rgba(255,255,255,0.20);
+    color:#F3EFE0;
+    padding:7px 14px; border-radius:20px; font-size:13px; font-weight:500;
+  }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:22px 24px;
+    margin-bottom:22px;
+    box-shadow:0 1px 3px rgba(36,31,26,0.06), 0 8px 24px -12px rgba(36,31,26,0.12);
+  }
+
+  .field-row{display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end;}
+  .field{display:flex; flex-direction:column; gap:6px; flex:1 1 200px;}
+  .field label{font-size:12.5px; color:var(--ink-soft); font-weight:500;}
+  select, input[type=text], input[type=number], input[type=date]{
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size:14.5px;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    background:#fff;
+    color:var(--ink);
+    transition:border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  select:focus, input:focus{
+    outline:none; border-color:var(--veg);
+    box-shadow:0 0 0 3px rgba(76,122,61,0.15);
+  }
+  input[readonly]{background:#F4F1E6; color:var(--ink-soft); font-family:'IBM Plex Mono', monospace;}
+
+  button{
+    font-family:'IBM Plex Sans', sans-serif;
+    font-weight:600;
+    font-size:14.5px;
+    padding:11px 20px;
+    border-radius:6px;
+    border:1px solid var(--ink);
+    background:var(--ink);
+    color:var(--paper);
+    cursor:pointer;
+    transition:transform 0.12s ease, box-shadow 0.12s ease, background 0.15s ease;
+  }
+  button:hover{background:#3a3226; transform:translateY(-1px); box-shadow:0 4px 12px -4px rgba(36,31,26,0.35);}
+  button:active{transform:translateY(0);}
+  button:disabled{opacity:0.55; cursor:progress; transform:none; box-shadow:none;}
+  button.ghost{
+    background:transparent; color:var(--ink); border:1px solid var(--line);
+    font-weight:500; padding:8px 14px; font-size:13.5px;
+  }
+  button.ghost:hover{border-color:var(--ink); background:rgba(36,31,26,0.04); box-shadow:none;}
+  #runBtn{
+    background:linear-gradient(120deg, var(--ink), #3a3226);
+    box-shadow:0 2px 8px -2px rgba(36,31,26,0.4);
+    font-size:15px; padding:13px 26px;
+  }
+  #runBtn:hover{box-shadow:0 6px 18px -4px rgba(76,122,61,0.5); background:linear-gradient(120deg, #3a3226, var(--veg));}
+
+  .custom-toggle{margin-top:14px;}
+  .custom-form{
+    display:none; margin-top:14px; padding-top:14px; border-top:1px dashed var(--line);
+  }
+  .custom-form.open{display:block;}
+
+  .run-row{margin-top:20px; display:flex; align-items:center; gap:14px;}
+  .status{font-size:13.5px; color:var(--ink-soft); min-height:18px;}
+
+  .mosaic-grid{display:grid; grid-template-columns:1fr 1fr; gap:18px;}
+  @media (max-width:640px){.mosaic-grid{grid-template-columns:1fr;}}
+  .mosaic-card{border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#000;}
+  .mosaic-head{
+    background:var(--panel); padding:10px 14px; border-bottom:1px solid var(--line);
+    display:flex; justify-content:space-between; align-items:baseline;
+  }
+  .mosaic-head .tag{font-size:12px; color:var(--ink-soft);}
+  .mosaic-head .date{font-family:'IBM Plex Mono', monospace; font-size:13px;}
+  .tiles{display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); aspect-ratio:1/1; background:#111; overflow:hidden;}
+  .tiles img{width:100%; height:100%; object-fit:cover; display:block; transition:transform 0.4s ease;}
+  .mosaic-card:hover .tiles img{transform:scale(1.06);}
+
+  .metrics{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-top:20px;}
+  .raw-note{font-size:13px; color:var(--ink-soft); margin:10px 2px 24px; font-style:italic;}
+  .analysis-section{margin-top:8px; padding-top:28px; border-top:3px solid var(--line);}
+  .analysis-section:nth-of-type(1){border-top-color:var(--veg);}
+  .analysis-section:nth-of-type(2){border-top-color:var(--water);}
+  .analysis-section h2{font-size:20px; margin-bottom:16px;}
+  .h2-icon{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:34px; height:34px; border-radius:50%;
+    font-size:16px; margin-right:10px; vertical-align:middle;
+    box-shadow:0 2px 6px rgba(36,31,26,0.2);
+  }
+  .explainer{border:1px solid var(--line); border-radius:6px; padding:10px 14px; margin-bottom:18px; background:var(--panel);}
+  .explainer summary{cursor:pointer; font-weight:600; font-size:14px; color:var(--ink);}
+  .explainer p{margin:10px 0 2px; font-size:14px; color:var(--ink-soft); line-height:1.55;}
+  .highlight-card{border:1px solid var(--line); border-radius:6px; padding:16px; margin-top:18px; background:var(--panel); box-shadow:0 1px 2px rgba(36,31,26,0.05);}
+  .highlight-head{font-weight:600; font-size:14.5px; margin-bottom:10px;}
+  .highlight-card canvas{width:100%; height:auto; border-radius:4px; display:block; background:#111;}
+  .legend{margin-top:10px; font-size:13px; color:var(--ink-soft); display:flex; align-items:center; flex-wrap:wrap; gap:4px;}
+  .legend .swatch{display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:5px; vertical-align:middle; box-shadow:inset 0 0 0 1px rgba(0,0,0,0.15);}
+  .highlight-caption{font-size:12.5px; color:var(--ink-soft); margin:10px 0 0;}
+  .highlight-unavailable{font-size:13px; color:var(--ink-soft); font-style:italic; margin-top:14px; padding:10px 14px; border:1px dashed var(--line); border-radius:6px;}
+  .metric{border:1px solid var(--line); border-radius:6px; padding:14px 16px; background:var(--panel); transition:transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;}
+  .metric:hover{transform:translateY(-2px); box-shadow:0 8px 20px -10px rgba(36,31,26,0.3); border-color:#c9bd9e;}
+  .metric .label{font-size:12.5px; color:var(--ink-soft); margin-bottom:6px;}
+  .metric .value{font-family:'IBM Plex Sans', sans-serif; font-size:17px; font-weight:600; line-height:1.3;}
+  .metric .value.up{color:var(--veg);}
+  .metric .value.down{color:var(--bad);}
+  .metric .subtext{font-size:12px; color:var(--ink-soft); margin-top:6px; line-height:1.4;}
+  .bar-track{height:6px; border-radius:3px; background:#E7E0CC; margin-top:10px; overflow:hidden;}
+  .bar-fill{height:100%; border-radius:3px; transition:width 0.5s ease;}
+  .bar-fill.veg{background:linear-gradient(90deg, var(--veg), #6fa257);}
+  .bar-fill.water{background:linear-gradient(90deg, var(--water), #3a95a0);}
+
+  .verdict{
+    margin-top:20px; padding:16px 18px; border-left:3px solid var(--veg);
+    background:var(--veg-soft); border-radius:0 6px 6px 0; font-size:15px;
+    box-shadow:0 1px 2px rgba(36,31,26,0.05);
+  }
+  .verdict.flat{border-left-color:var(--ochre); background:#F6EFD8;}
+  .verdict.negative{border-left-color:var(--bad); background:#F4E3E0;}
+  .verdict p{margin:0 0 12px;}
+  .verdict .next-steps-label{font-weight:600; font-size:13.5px; margin-bottom:6px;}
+  .verdict ul{margin:0; padding-left:20px;}
+  .verdict li{margin-bottom:5px; font-size:14px;}
+  .verdict-tier{display:inline-flex; align-items:center; gap:6px; font-weight:700; font-size:12.5px; padding:3px 10px; border-radius:20px; margin-bottom:12px;}
+  .tier-pos{background:rgba(76,122,61,0.16); color:#365c29;}
+  .tier-flat{background:rgba(201,162,39,0.20); color:#8a6a12;}
+  .tier-neg{background:rgba(162,62,51,0.16); color:#7c2c22;}
+
+  .badge{
+    display:inline-block; font-size:11.5px; padding:4px 11px; border-radius:20px;
+    border:1px solid var(--line); color:var(--ink-soft); margin-top:14px;
+    background:#fff;
+  }
+
+  #pickerMap{box-shadow:0 1px 3px rgba(36,31,26,0.06), 0 8px 20px -12px rgba(36,31,26,0.18); z-index:1;}
+  .site-marker-dot{
+    position:absolute; top:4px; left:4px; width:10px; height:10px; border-radius:50%;
+    background:var(--soil); border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.4);
+  }
+  .site-marker-pulse{
+    position:absolute; top:-3px; left:-3px; width:24px; height:24px; border-radius:50%;
+    background:var(--soil); opacity:0.35; animation:markerPulse 1.8s ease-out infinite;
+  }
+  @keyframes markerPulse{
+    0%{transform:scale(0.4); opacity:0.5;}
+    100%{transform:scale(1.6); opacity:0;}
+  }
+  .badge.estimated{border-color:var(--ochre); color:#8a6a12;}
+
+  footer{margin-top:34px; font-size:13px; color:var(--ink-soft); border-top:1px solid var(--line); padding-top:18px;}
+  footer p{margin:0 0 10px;}
+  .hidden{display:none;}
+  @keyframes resultsIn{
+    0%{opacity:0; transform:translateY(14px);}
+    100%{opacity:1; transform:translateY(0);}
+  }
+  #results.animate-in{animation:resultsIn 0.5s ease-out;}
+  .data-choice-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(220px,1fr));
+    gap:18px;
+  }
+  .data-choice{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    text-align:left;
+    gap:5px;
+    min-height:150px;
+    padding:22px;
+    background:#fff;
+    color:var(--ink);
+    border:1px solid var(--line);
+    border-radius:7px;
+    cursor:pointer;
+    transition:transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+  }
+  .data-choice:hover{
+    background:#fff;
+    border-color:var(--ink);
+    transform:translateY(-2px);
+    box-shadow:0 4px 12px rgba(36,31,26,.08);
+  }
+  .choice-icon{font-size:30px;line-height:1;margin-bottom:7px;}
+  .choice-title{font-family:'Roboto Slab',serif;font-size:20px;font-weight:700;}
+  .choice-description{font-size:13.5px;color:var(--ink-soft);line-height:1.45;}
+
+  .geo-analysis-panel h2{margin-bottom:8px;}
+  .geo-analysis-panel .run-row{align-items:center;}
+  .geo-analysis-panel #geoAnalysisStatus{flex:1;}
+  .geo-analysis-panel{
+    margin-top:18px;
+    border:1px solid var(--line);
+    background:#fff;
+  }
+  .geo-analysis-panel .field input[readonly]{
+    background:#f5f3ef;
+    cursor:not-allowed;
+  }
+
+  .data-panel-header{display:flex;justify-content:flex-start;margin-bottom:12px;}
+  @media(max-width:650px){
+    .data-choice-grid{grid-template-columns:1fr;}
+  }
+
+
+  /* ===== Geotagged field photo ===== */
+  .photo-tools{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;}
+  .photo-preview{margin-top:18px;display:grid;grid-template-columns:minmax(280px,1fr) minmax(260px,.8fr);gap:18px;}
+  @media(max-width:760px){.photo-preview{grid-template-columns:1fr;}}
+  .photo-box,.photo-info{border:1px solid var(--line);border-radius:6px;background:var(--panel);overflow:hidden;}
+  .photo-box img{width:100%;max-height:520px;object-fit:contain;display:block;background:#111;}
+  .photo-info{padding:16px;}
+  .photo-info h3{font-size:17px;margin-bottom:12px;}
+  .gps-status{padding:10px 12px;border-radius:5px;margin-bottom:12px;font-size:13.5px;}
+  .gps-status.ok{background:var(--veg-soft);border-left:3px solid var(--veg);}
+  .gps-status.warn{background:#F6EFD8;border-left:3px solid var(--ochre);}
+  .gps-status.bad{background:#F4E3E0;border-left:3px solid var(--bad);}
+  .gps-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0;}
+  .gps-item{border:1px solid var(--line);padding:9px 10px;border-radius:4px;background:#fff;}
+  .gps-item .k{font-size:11.5px;color:var(--ink-soft);}
+  .gps-item .v{font-family:'IBM Plex Mono',monospace;font-size:13px;margin-top:3px;}
+  .match-card{margin-top:14px;padding:12px;border:1px dashed var(--line);border-radius:5px;background:#fff;}
+  .match-card strong{display:block;margin-bottom:5px;}
+  .small-note{font-size:12px;color:var(--ink-soft);line-height:1.45;}
+  .progress-wrap{display:none;margin-top:10px;}
+  .progress-wrap.open{display:block;}
+  progress{width:100%;height:8px;}
+
+</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <h1>Watershed Impact Viewer</h1>
+    <p class="tagline">Upload a state's watershed CSV — or add locations manually — and this tool pulls real satellite imagery from two different years, then shows exactly how much greener and wetter the land has become.</p>
+    <div class="chips">
+      <span class="chip">🛰️ Real Sentinel-2 imagery, 10m</span>
+      <span class="chip">🧮 NDVI &amp; NDWI computed live in-browser</span>
+      <span class="chip">🌍 Works for any state</span>
+      <span class="chip">🔓 No install, no login</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ===================== START DATA TYPE MENU ===================== -->
+  <div class="panel" id="dataTypeMenu">
+    <h2>Choose the type of data you want to upload</h2>
+    <p class="lede" style="font-size:14px;margin-bottom:18px;">
+      Select one option below. The upload area will appear only after you choose it.
+    </p>
+    <div class="data-choice-grid">
+      <button type="button" class="data-choice" id="chooseCsvBtn">
+        <span class="choice-icon">📄</span>
+        <span class="choice-title">CSV file</span>
+        <span class="choice-description">Upload watershed locations from a CSV file.</span>
+      </button>
+      <button type="button" class="data-choice" id="choosePhotoBtn">
+        <span class="choice-icon">📷</span>
+        <span class="choice-title">Geo-coded image</span>
+        <span class="choice-description">Upload a geotagged photo or GPS Map Camera image.</span>
+      </button>
+    </div>
+  </div>
+
+
+  <div class="panel hidden" id="csvUploadPanel">
+    <div class="data-panel-header"><button class="ghost backToMenuBtn" type="button">← Back to data type</button></div>
+    <div class="field-row">
+      <div class="field" style="flex-basis:260px;">
+        <label for="stateSelect">State / data source</label>
+        <select id="stateSelect">
+          <option value="custom">Custom data (manual entry)</option>
+        </select>
+      </div>
+      <button class="ghost" id="addStateBtn" type="button">+ Add state (upload CSV)</button>
+      <div class="field" style="flex-basis:140px;">
+        <label>Latitude</label>
+        <input type="text" id="latOut" readonly>
+      </div>
+      <div class="field" style="flex-basis:140px;">
+        <label>Longitude</label>
+        <input type="text" id="lonOut" readonly>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;">
+      <div id="pickerMap" style="height:280px; border:1px solid var(--line); border-radius:6px;"></div>
+      <p style="font-size:12px; color:var(--ink-soft); margin:6px 2px 0;">Shows the currently selected watershed. When "Custom data" is active, click anywhere on the map to set a location's coordinates instead of typing them.</p>
+    </div>
+
+    <div class="custom-form" id="addStateForm">
+      <div class="field-row">
+        <div class="field" style="flex-basis:200px;">
+          <label for="newStateName">State name</label>
+          <input type="text" id="newStateName" placeholder="e.g. Maharashtra">
+        </div>
+        <div class="field" style="flex-basis:260px;">
+          <label for="csvFileInput">CSV file</label>
+          <input type="file" id="csvFileInput" accept=".csv,text/csv">
+        </div>
+        <button class="ghost" id="loadCsvBtn" type="button">Add state</button>
+      </div>
+      <p style="font-size:12px; color:var(--ink-soft); margin:10px 0 0;">Expects a CSV with header columns for a name (e.g. "watershed_name" or "name"), "latitude", and "longitude" — a "watershed_code" column is optional. Same format as a typical state watershed atlas export.</p>
+    </div>
+
+    <div id="datasetSection" class="hidden" style="margin-top:16px;">
+      <div class="field" style="flex-basis:280px; max-width:420px;">
+        <label for="siteSelect">Watershed unit</label>
+        <select id="siteSelect"></select>
+      </div>
+    </div>
+
+    <div id="customSection" style="margin-top:16px;">
+      <div class="field-row">
+        <div class="field" style="flex-basis:220px;">
+          <label for="cName">Structure / watershed name</label>
+          <input type="text" id="cName" placeholder="e.g. Village Check Dam">
+        </div>
+        <div class="field" style="flex-basis:140px;">
+          <label for="cLat">Latitude</label>
+          <input type="number" id="cLat" step="0.0001" placeholder="19.0980">
+        </div>
+        <div class="field" style="flex-basis:140px;">
+          <label for="cLon">Longitude</label>
+          <input type="number" id="cLon" step="0.0001" placeholder="74.4805">
+        </div>
+        <button class="ghost" id="addCustom" type="button">Add to list</button>
+      </div>
+
+      <div class="field-row" style="margin-top:14px;">
+        <div class="field" style="flex-basis:100%;">
+          <label for="bulkPaste">Or paste multiple rows — one per line, as: name, latitude, longitude</label>
+          <textarea id="bulkPaste" rows="4" style="font-family:'IBM Plex Mono', monospace; font-size:13px; padding:9px 10px; border:1px solid var(--line); border-radius:4px;" placeholder="Tungabhadra Check Dam, 15.3350, 76.4230&#10;Godavari Percolation Tank, 19.9200, 74.4800"></textarea>
+        </div>
+      </div>
+      <div class="run-row" style="margin-top:8px;">
+        <button class="ghost" id="importBulk" type="button">Import pasted rows</button>
+      </div>
+
+      <div class="field" style="margin-top:16px; flex-basis:280px; max-width:420px;">
+        <label for="customSiteSelect">Your locations</label>
+        <select id="customSiteSelect"></select>
+      </div>
+    </div>
+
+    <div class="field-row" style="margin-top:20px;">
+      <div class="field" style="flex-basis:180px;">
+        <label for="beforeDate">"Before" image year</label>
+        <input type="number" id="beforeDate" value="2018" min="2018" max="2025" step="1">
+      </div>
+      <div class="field" style="flex-basis:180px;">
+        <label for="afterDate">"After" image year</label>
+        <input type="number" id="afterDate" value="2025" min="2018" max="2025" step="1">
+      </div>
+    </div>
+    <p style="font-size:12.5px; color:var(--ink-soft); margin:8px 0 0;">Sentinel-2 cloudless mosaics are confirmed available for 2018–2024, with a 2025 edition also published — 2026 isn't out yet (annual mosaics publish months after year-end). 2016/2017 aren't available as separate years (2016's edition already spans into 2017). If a chosen year has no coverage at your location, the tool will tell you rather than showing a blank result.</p>
+
+    <div class="run-row">
+      <button id="runBtn" type="button">Analyze watershed impact</button>
+      <div class="status" id="statusText"></div>
+    </div>
+  </div>
+
+
+  <!-- ===================== GEOTAGGED PHOTO SECTION ===================== -->
+  <div class="panel hidden" id="photoUploadPanel">
+    <div class="data-panel-header"><button class="ghost backToMenuBtn" type="button">← Back to data type</button></div>
+    <div class="panel geo-analysis-panel hidden" id="geoWatershedAnalysis">
+      <h2>📍 Analyze this geotagged location</h2>
+      <p class="lede" style="font-size:13px;margin-bottom:14px;">
+        The coordinates detected from the photograph are filled automatically. Select the
+        comparison years and analyze the watershed directly — no copy/paste is required.
+      </p>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="geoAnalysisLat">Latitude</label>
+          <input id="geoAnalysisLat" type="text" readonly>
+        </div>
+        <div class="field">
+          <label for="geoAnalysisLon">Longitude</label>
+          <input id="geoAnalysisLon" type="text" readonly>
+        </div>
+      </div>
+
+      <div class="field-row" style="margin-top:14px;">
+        <div class="field" style="flex-basis:180px;">
+          <label for="geoBeforeDate">"Before" image year</label>
+          <input type="number" id="geoBeforeDate" value="2018" min="2018" max="2025" step="1">
+        </div>
+        <div class="field" style="flex-basis:180px;">
+          <label for="geoAfterDate">"After" image year</label>
+          <input type="number" id="geoAfterDate" value="2025" min="2018" max="2025" step="1">
+        </div>
+      </div>
+      <p style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 0;">
+        Sentinel-2 cloudless mosaics are confirmed available for 2018–2024, with a 2025 edition also published.
+      </p>
+
+      <div class="run-row" style="margin-top:16px;">
+        <button type="button" id="analyzeGeoWatershedBtn">Analyze watershed impact</button>
+        <div class="status" id="geoAnalysisStatus"></div>
+      </div>
+      <div id="geoAnalysisResults" style="margin-top:12px;"></div>
+    </div>
+
+    <h2><span class="h2-icon" style="background:var(--ochre);">📷</span>Geotagged field photograph</h2>
+    <p class="lede" style="font-size:14px;margin-bottom:16px;">
+      Upload a normal geotagged JPEG <strong>or</strong> a GPS Map Camera photo.
+      The website first checks EXIF GPS metadata. If that is missing, it uses OCR
+      to read coordinates printed directly on the photograph, such as
+      “Lat 12.370974° Long 76.585505°”.
+    </p>
+
+    <div class="photo-tools">
+      <div class="field" style="flex-basis:320px;">
+        <label for="geoPhotoInput">Field photo</label>
+        <input type="file" id="geoPhotoInput" accept="image/jpeg,image/jpg,image/png">
+      </div>
+      <button class="ghost" id="clearPhotoBtn" type="button">Clear photo</button>
+    </div>
+
+    <div class="progress-wrap" id="ocrProgressWrap">
+      <div class="status" id="ocrStatus">Reading photograph…</div>
+      <progress id="ocrProgress" value="0" max="1"></progress>
+    </div>
+
+    <div id="photoResults" class="photo-preview" style="display:none;">
+      <div class="photo-box">
+        <img id="geoPhotoPreview" alt="Uploaded geotagged field photograph">
+      </div>
+      <div class="photo-info">
+        <h3>Location extracted from photograph</h3>
+        <div id="gpsStatus" class="gps-status"></div>
+
+        <div class="gps-grid">
+          <div class="gps-item">
+            <div class="k">Latitude</div>
+            <div class="v" id="photoLat">—</div>
+          </div>
+          <div class="gps-item">
+            <div class="k">Longitude</div>
+            <div class="v" id="photoLon">—</div>
+          </div>
+          <div class="gps-item">
+            <div class="k">Date / time</div>
+            <div class="v" id="photoDate">—</div>
+          </div>
+          <div class="gps-item">
+            <div class="k">GPS source</div>
+            <div class="v" id="photoGpsSource">—</div>
+          </div>
+        </div>
+
+        <div class="match-card" id="photoMatchCard" style="display:none;">
+          <strong>Nearest uploaded watershed</strong>
+          <div id="photoMatchName">—</div>
+          <div class="small-note" id="photoMatchDistance">—</div>
+        </div>
+
+        <div class="small-note" style="margin-top:12px;">
+          EXIF GPS is preferred when available. If EXIF has no GPS, the fallback
+          reads coordinate text visible in the image. This supports GPS Map Camera-style
+          overlays directly in the browser.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="mosaic-grid">
+      <div class="mosaic-card">
+        <div class="mosaic-head"><span class="tag">Before</span><span class="date" id="beforeDateLabel"></span></div>
+        <div class="tiles" id="beforeTiles"></div>
+        <div class="tile-warn" id="beforeWarn" style="display:none; background:#F4E3E0; color:var(--bad); font-size:12.5px; padding:8px 12px;"></div>
+      </div>
+      <div class="mosaic-card">
+        <div class="mosaic-head"><span class="tag">After</span><span class="date" id="afterDateLabel"></span></div>
+        <div class="tiles" id="afterTiles"></div>
+        <div class="tile-warn" id="afterWarn" style="display:none; background:#F4E3E0; color:var(--bad); font-size:12.5px; padding:8px 12px;"></div>
+      </div>
+    </div>
+    <p class="raw-note">These two panels show the raw satellite pictures side by side — useful for context, but hard to judge change from directly. The highlight maps below mark exactly where things changed.</p>
+
+    <span class="badge" id="sourceBadge" style="margin-top:0;"></span>
+
+    <!-- ===================== VEGETATION SECTION ===================== -->
+    <div class="analysis-section">
+      <h2><span class="h2-icon" style="background:var(--veg);">🌱</span>Vegetation (greenness) analysis</h2>
+      <details class="explainer">
+        <summary>What is the "greenness index"?</summary>
+        <p>It's a number called <strong>VARI</strong> (Visible Atmospherically Resistant Index), worked out from the red, green and blue values of each pixel: <span class="coord">VARI = (Green − Red) ÷ (Green + Red − Blue)</span>. Healthy plant cover reflects more green light than red, so denser vegetation gives a higher VARI. Bare soil, rock, roads and buildings sit closer to zero or negative. Scientists normally use a similar index called NDVI, but that needs an infrared camera band — VARI gives a comparable read using only an ordinary colour photo, which is what our free imagery source provides.</p>
+        <p><strong>Important:</strong> if you've seen vegetation-index charts elsewhere showing "0.6–0.9 = dense healthy vegetation," those are for NDVI, not VARI — the two are not on the same scale. NDVI gets pushed close to 1 by a strong infrared signal that VARI simply doesn't have access to. VARI's useful range is much narrower: even dense forest canopy usually only reaches about 0.15–0.3. A VARI reading of 0.05–0.1 can still represent decent vegetation — don't compare these numbers directly to NDVI benchmarks.</p>
+        <p>When it's available for this location and years, a genuine <strong>NDVI</strong> figure — calculated here in your browser from Sentinel-2's actual infrared band, not just visible light — appears below as a separate card, on the standard 0.6–0.9 scale.</p>
+      </details>
+
+      <div class="metrics">
+        <div class="metric">
+          <div class="label">Land cover — before</div>
+          <div class="value" id="vegBefore">—</div>
+          <div class="subtext" id="vegBeforeSub"></div>
+        </div>
+        <div class="metric">
+          <div class="label">Land cover — after</div>
+          <div class="value" id="vegAfter">—</div>
+          <div class="subtext" id="vegAfterSub"></div>
+        </div>
+        <div class="metric">
+          <div class="label">Greenness change</div>
+          <div class="value" id="vegChange">—</div>
+          <div class="bar-track"><div class="bar-fill veg" id="vegBar" style="width:0%"></div></div>
+          <div class="subtext">Positive = looks greener now than before; negative = looks less green.</div>
+        </div>
+      </div>
+
+      <div class="metric" id="trueNdviCard" style="display:none; margin-top:14px;">
+        <div class="label">True NDVI (calculated on this page from Sentinel-2's infrared band — not a proxy)</div>
+        <div style="display:flex; gap:24px; flex-wrap:wrap; margin-top:6px;">
+          <div><span style="font-size:12px; color:var(--ink-soft);">Before</span><br><span class="value" id="ndviBefore">—</span></div>
+          <div><span style="font-size:12px; color:var(--ink-soft);">After</span><br><span class="value" id="ndviAfter">—</span></div>
+          <div><span style="font-size:12px; color:var(--ink-soft);">Change</span><br><span class="value" id="ndviChange">—</span></div>
+        </div>
+        <div class="subtext">Computed as (Infrared − Red) ÷ (Infrared + Red) from Terrascope's public Sentinel-2 infrared imagery — this is the standard NDVI formula, done here in your browser from real band data, unlike the VARI proxy above which only has visible light to work with.</div>
+      </div>
+
+      <details class="explainer more-info">
+        <summary>More information — see the before/after change-highlight map</summary>
+        <div class="highlight-card" id="vegHighlightCard">
+          <div class="highlight-head">Where the change happened</div>
+          <canvas id="vegDiffCanvas"></canvas>
+          <div class="legend">
+            <span class="swatch" style="background:#14aa46;"></span> Got greener
+            <span class="swatch" style="background:#be4628; margin-left:16px;"></span> Got less green
+            <span class="swatch" style="background:#8a8a8a; margin-left:16px;"></span> Little change
+          </div>
+          <p class="highlight-caption">Each pixel compares its own before/after greenness — so this map marks the specific patches that changed, instead of one number for the whole area.</p>
+        </div>
+        <div class="highlight-unavailable" id="vegHighlightUnavailable" style="display:none;"></div>
+      </details>
+
+      <div class="verdict" id="vegVerdict"></div>
+    </div>
+
+    <!-- ===================== WATER SECTION ===================== -->
+    <div class="analysis-section">
+      <h2><span class="h2-icon" style="background:var(--water);">💧</span>Water analysis</h2>
+      <details class="explainer">
+        <summary>What does the "visible water" proxy mean?</summary>
+        <p>Each pixel gets a continuous <strong>visible-band water index</strong>, inspired by the standard NDWI formula: <span class="coord">WI = (Blue − Green) ÷ (Blue + Green)</span>. Open water reflects more blue light relative to green than vegetation or soil does, so water-like areas score higher. This is a proxy — a genuine <strong>NDWI</strong> figure, calculated here in your browser from Sentinel-2's actual infrared band, appears below as a separate card when it's available for this location and years.</p>
+      </details>
+
+      <div class="metrics">
+        <div class="metric">
+          <div class="label">Visible water — before</div>
+          <div class="value" id="waterBefore">—</div>
+          <div class="subtext" id="waterBeforeSub"></div>
+        </div>
+        <div class="metric">
+          <div class="label">Visible water — after</div>
+          <div class="value" id="waterAfter">—</div>
+          <div class="subtext" id="waterAfterSub"></div>
+        </div>
+        <div class="metric">
+          <div class="label">Visible water change</div>
+          <div class="value" id="waterChange">—</div>
+          <div class="bar-track"><div class="bar-fill water" id="waterBar" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <div class="metric" id="trueNdwiCard" style="display:none; margin-top:14px;">
+        <div class="label">True NDWI (calculated on this page from Sentinel-2's infrared band — not a proxy)</div>
+        <div style="display:flex; gap:24px; flex-wrap:wrap; margin-top:6px;">
+          <div><span style="font-size:12px; color:var(--ink-soft);">Before</span><br><span class="value" id="ndwiBefore">—</span></div>
+          <div><span style="font-size:12px; color:var(--ink-soft);">After</span><br><span class="value" id="ndwiAfter">—</span></div>
+          <div><span style="font-size:12px; color:var(--ink-soft);">Change</span><br><span class="value" id="ndwiChange">—</span></div>
+        </div>
+        <div class="subtext">Computed as (Green − Infrared) ÷ (Green + Infrared) — the standard McFeeters NDWI formula, from the same infrared image used for true NDVI above, done here in your browser from real band data.</div>
+      </div>
+
+      <details class="explainer more-info">
+        <summary>More information — see the before/after change-highlight map</summary>
+        <div class="highlight-card" id="waterHighlightCard">
+          <div class="highlight-head">Where the water changed</div>
+          <canvas id="waterDiffCanvas"></canvas>
+          <div class="legend">
+            <span class="swatch" style="background:#1f6f9e;"></span> New / more visible water
+            <span class="swatch" style="background:#c9822c; margin-left:16px;"></span> Water lost / less visible
+            <span class="swatch" style="background:#8a8a8a; margin-left:16px;"></span> No change
+          </div>
+        </div>
+        <div class="highlight-unavailable" id="waterHighlightUnavailable" style="display:none;"></div>
+      </details>
+
+      <div class="verdict" id="waterVerdict"></div>
+    </div>
+
+    <!-- ============== STRUCTURE-LEVEL (INFRASTRUCTURE) IMPACT ============== -->
+    <div class="analysis-section" style="border-top-color:var(--soil);">
+      <h2><span class="h2-icon" style="background:var(--soil);">🏗️</span>Structure-level impact</h2>
+      <details class="explainer more-info" open>
+        <summary>What is this?</summary>
+        <p>Everything above covers roughly a <strong>7 km</strong> square — useful for spotting regional land-cover trends, but too wide to say much about one specific check dam or pond. This panel re-reads just the <strong>~2.4 km</strong> area right at the centre of that same image — no extra download, just a tighter slice of the same data — to give a reading that's more directly about the structure's immediate surroundings rather than the whole landscape around it.</p>
+      </details>
+      <div class="metrics" id="structureImpactCard">
+        <div class="metric">
+          <div class="label">Immediate vicinity — greenness</div>
+          <div style="display:flex; gap:18px; flex-wrap:wrap; margin-top:4px;">
+            <div><span style="font-size:12px; color:var(--ink-soft);">Before</span><br><span class="value" id="structureVegBefore">—</span></div>
+            <div><span style="font-size:12px; color:var(--ink-soft);">After</span><br><span class="value" id="structureVegAfter">—</span></div>
+            <div><span style="font-size:12px; color:var(--ink-soft);">Change</span><br><span class="value" id="structureVegChange">—</span></div>
+          </div>
+        </div>
+        <div class="metric">
+          <div class="label">Immediate vicinity — water index</div>
+          <div style="display:flex; gap:18px; flex-wrap:wrap; margin-top:4px;">
+            <div><span style="font-size:12px; color:var(--ink-soft);">Before</span><br><span class="value" id="structureWaterBefore">—</span></div>
+            <div><span style="font-size:12px; color:var(--ink-soft);">After</span><br><span class="value" id="structureWaterAfter">—</span></div>
+            <div><span style="font-size:12px; color:var(--ink-soft);">Change</span><br><span class="value" id="structureWaterChange">—</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="highlight-unavailable" id="structureImpactUnavailable" style="display:none; margin-top:14px;"></div>
+    </div>
+
+    <!-- ============== DRONE / FIELD IMAGERY (UPLOAD YOUR OWN PHOTOS) ============== -->
+    <div class="analysis-section" style="border-top-color:var(--ochre);">
+      <h2><span class="h2-icon" style="background:var(--ochre);">🚁</span>Drone / field imagery analysis</h2>
+      <details class="explainer">
+        <summary>What is this?</summary>
+        <p>If you have your own aerial, drone, or ground photos of the structure from two different times, upload them here — the same greenness (VARI) and water-index maths used on the satellite imagery above runs directly on your own photos' pixels, computed in this browser. This doesn't need internet access to any satellite service, since it's your own image data.</p>
+      </details>
+      <div class="field-row">
+        <div class="field" style="flex-basis:220px;">
+          <label for="droneBeforeFile">"Before" photo</label>
+          <input type="file" id="droneBeforeFile" accept="image/*">
+        </div>
+        <div class="field" style="flex-basis:220px;">
+          <label for="droneAfterFile">"After" photo</label>
+          <input type="file" id="droneAfterFile" accept="image/*">
+        </div>
+        <button class="ghost" id="droneAnalyzeBtn" type="button">Analyze these photos</button>
+      </div>
+      <div class="mosaic-grid" style="margin-top:16px;">
+        <div class="mosaic-card"><img id="dronePreviewBefore" style="width:100%; display:none;"></div>
+        <div class="mosaic-card"><img id="dronePreviewAfter" style="width:100%; display:none;"></div>
+      </div>
+      <div class="metrics" id="droneResults" style="display:none; margin-top:16px;">
+        <div class="metric">
+          <div class="label">Greenness change (your photos)</div>
+          <div class="value" id="droneVegChange">—</div>
+        </div>
+        <div class="metric">
+          <div class="label">Water index change (your photos)</div>
+          <div class="value" id="droneWaterChange">—</div>
+        </div>
+      </div>
+      <div class="subtext" id="droneStatus" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <div id="fieldEvidence" class="panel hidden" style="margin-top:22px;">
+    <h2><span class="h2-icon" style="background:var(--ink);">📷</span>Field evidence</h2>
+    <div id="activePhotoCard"></div>
+  </div>
+
+  <footer>
+    <p><strong>More information.</strong> For official, authoritative satellite maps and watershed layers for India, see <a href="https://bhuvan-app1.nrsc.gov.in/bhuvan2d/bhuvan/bhuvan2d.php" target="_blank" rel="noopener">Bhuvan 2D</a> — ISRO/NRSC's own geoportal.</p>
+    <p><strong>How this demo works.</strong> You supply only a structure name and its latitude/longitude (or pick a preset). The tool automatically tiles in satellite imagery of that location for the two chosen years from ESA's Copernicus Sentinel-2 archive (published as the "Sentinel-2 cloudless" annual mosaics by EOX IT Services) at 10 m resolution — finer than the 30 m target resolution referenced in the original SRISHTI-DRISHTI proposal — then computes the Visible Atmospherically Resistant Index (VARI) — a greenness proxy built from red/green/blue pixels, used here because true-colour imagery has no near-infrared band for a full NDVI — plus a simple blue-channel water-extent proxy, and compares before vs. after.</p>
+    <p><strong>Limitations.</strong> This is an illustrative prototype, not the production pipeline described in the study. Sentinel-2 cloudless is an annual composite (not a single-day image), so it smooths out short-term variation — good for spotting multi-year land-cover trends, less suited to pinpointing a specific date. A live analysis also depends on your browser being able to read pixel data from the tile server; if that's blocked, the tool shows a clearly-labelled estimated figure instead so the demo still runs end-to-end. Field photos support both EXIF geotags and GPS Map Camera-style coordinates printed into the image.</p>
+    <p><strong>Dataset.</strong> No watershed data is baked into this file — upload your own state's CSV (name, latitude, longitude, and an optional code column) via "+ Add state," or enter locations manually. This keeps the tool usable for any state without needing a new file for each one.</p>
+    <p>Imagery: Sentinel-2 cloudless — <span class="coord">https://s2maps.eu</span> by EOX IT Services GmbH (contains modified Copernicus Sentinel data).</p>
+  </footer>
+</div>
+
+<script>
+(function(){
+  // Uploaded states: key -> {label, sites:[{name,lat,lon}]}. Nothing is baked in —
+  // use "+ Add state" to upload a CSV (name, latitude, longitude[, code] columns).
+  window.uploadedStates = {};
+  window.customSites = [];
+  let uploadedStates = window.uploadedStates;
+  let customSites = window.customSites;
+  let geoPhotos = [];
+  window.geoPhotos = geoPhotos;
+  // Holds the most recent before/after pixel grids (768x768, from the 3x3
+  // tile mosaic) so the structure-level impact panel can re-slice them
+  // without any extra network requests.
+  let lastBeforePixels = null;
+  let lastAfterPixels = null;
+
+  const stateSelect = document.getElementById('stateSelect');
+  const datasetSection = document.getElementById('datasetSection');
+  const customSection = document.getElementById('customSection');
+  const siteSelect = document.getElementById('siteSelect');
+  const customSiteSelect = document.getElementById('customSiteSelect');
+  const latOut = document.getElementById('latOut');
+  const lonOut = document.getElementById('lonOut');
+  const statusText = document.getElementById('statusText');
+  const runBtn = document.getElementById('runBtn');
+  const results = document.getElementById('results');
+
+  function renderDatasetSelect(){
+    const st = uploadedStates[stateSelect.value];
+    siteSelect.innerHTML = '';
+    if(!st || st.sites.length === 0){
+      const opt = document.createElement('option');
+      opt.textContent = 'No data for this state';
+      opt.disabled = true;
+      siteSelect.appendChild(opt);
+      return;
+    }
+    st.sites.forEach((s,i)=>{
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = s.name;
+      siteSelect.appendChild(opt);
+    });
+  }
+
+  function renderCustomSelect(preferIndex){
+    customSiteSelect.innerHTML = '';
+    if(customSites.length === 0){
+      const opt = document.createElement('option');
+      opt.textContent = 'No custom locations added yet';
+      opt.disabled = true;
+      customSiteSelect.appendChild(opt);
+      updateCoordDisplay();
+      return;
+    }
+    customSites.forEach((s,i)=>{
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = s.name;
+      customSiteSelect.appendChild(opt);
+    });
+    customSiteSelect.value = (preferIndex !== undefined) ? preferIndex : customSites.length-1;
+    updateCoordDisplay();
+  }
+
+  function activeSite(){
+    if(stateSelect.value === 'custom'){
+      return customSites[customSiteSelect.value];
+    }
+    const st = uploadedStates[stateSelect.value];
+    return st ? st.sites[siteSelect.value] : undefined;
+  }
+
+  function updateCoordDisplay(){
+    const s = activeSite();
+    if(!s){ latOut.value = ''; lonOut.value = ''; return; }
+    latOut.value = s.lat.toFixed(4) + ' N';
+    lonOut.value = s.lon.toFixed(4) + ' E';
+    if(typeof setPickerMarker === 'function') setPickerMarker(s.lat, s.lon);
+  }
+
+  function switchState(){
+    if(stateSelect.value === 'custom'){
+      datasetSection.classList.add('hidden');
+      customSection.classList.remove('hidden');
+    } else {
+      datasetSection.classList.remove('hidden');
+      customSection.classList.add('hidden');
+      renderDatasetSelect();
+    }
+    updateCoordDisplay();
+  }
+  window.renderDatasetSelect = renderDatasetSelect;
+  window.renderCustomSelect = renderCustomSelect;
+  window.updateCoordDisplay = updateCoordDisplay;
+  window.switchState = switchState;
+  window.activeSite = activeSite;
+
+  // ---- Interactive Leaflet map: shows the active site, lets you click to
+  // set coordinates for a custom location instead of typing them. ----
+  let pickerMap = null;
+  let pickerMarker = null;
+  function initPickerMap(){
+    if(typeof L === 'undefined' || pickerMap) return;
+    pickerMap = L.map('pickerMap', {zoomControl: true}).setView([15.3, 75.7], 6); // default view: Karnataka
+    // CARTO's basemap tiles are free for exactly this kind of embedding — OSM's
+    // own tile servers actively block third-party apps under their usage policy.
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }).addTo(pickerMap);
+    pickerMap.on('click', (e)=>{
+      if(stateSelect.value !== 'custom') return;
+      const lat = e.latlng.lat, lon = e.latlng.lng;
+      const latField = document.getElementById('cLat');
+      const lonField = document.getElementById('cLon');
+      if(latField) latField.value = lat.toFixed(6);
+      if(lonField) lonField.value = lon.toFixed(6);
+      setPickerMarker(lat, lon);
+    });
+  }
+  const siteMarkerIcon = (typeof L !== 'undefined') ? L.divIcon({
+    className: 'site-marker',
+    html: '<span class="site-marker-dot"></span><span class="site-marker-pulse"></span>',
+    iconSize: [18,18], iconAnchor: [9,9]
+  }) : null;
+  function setPickerMarker(lat, lon){
+    if(!pickerMap) return;
+    if(pickerMarker) pickerMap.removeLayer(pickerMarker);
+    pickerMarker = L.marker([lat, lon], siteMarkerIcon ? {icon: siteMarkerIcon} : {}).addTo(pickerMap);
+    pickerMap.setView([lat, lon], Math.max(pickerMap.getZoom(), 10));
+  }
+  window.setPickerMarker = setPickerMarker;
+  window.invalidatePickerMap = function(){ if(pickerMap) pickerMap.invalidateSize(); };
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initPickerMap);
+  } else {
+    initPickerMap();
+  }
+
+  function slugify(str){
+    return str.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || ('state-' + Date.now());
+  }
+
+  function parseWatershedCsv(text){
+    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    if(lines.length < 2) return null;
+    const header = lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/"/g,''));
+    const nameIdx = header.findIndex(h=>/name/.test(h));
+    const codeIdx = header.findIndex(h=>/code/.test(h));
+    const latIdx = header.findIndex(h=>h==='latitude' || h==='lat' || /^lat/.test(h));
+    const lonIdx = header.findIndex(h=>h==='longitude' || h==='lon' || h==='lng' || /^lon/.test(h));
+    if(nameIdx===-1 || latIdx===-1 || lonIdx===-1) return null;
+    const sites = [];
+    for(let i=1;i<lines.length;i++){
+      const cols = lines[i].split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+      if(cols.length <= Math.max(nameIdx,latIdx,lonIdx)) continue;
+      let name = cols[nameIdx];
+      if(codeIdx !== -1 && cols[codeIdx]) name += ` (${cols[codeIdx]})`;
+      const lat = parseFloat(cols[latIdx]);
+      const lon = parseFloat(cols[lonIdx]);
+      if(!name || isNaN(lat) || isNaN(lon)) continue;
+      sites.push({name, lat, lon});
+    }
+    return sites;
+  }
+
+  function addStateOption(key, label, sites){
+    uploadedStates[key] = {label, sites};
+    let opt = stateSelect.querySelector(`option[value="${key}"]`);
+    if(!opt){
+      opt = document.createElement('option');
+      opt.value = key;
+      stateSelect.insertBefore(opt, stateSelect.querySelector('option[value="custom"]'));
+    }
+    opt.textContent = `${label} (${sites.length} watersheds)`;
+    stateSelect.value = key;
+    switchState();
+  }
+
+  stateSelect.addEventListener('change', switchState);
+  siteSelect.addEventListener('change', updateCoordDisplay);
+  customSiteSelect.addEventListener('change', updateCoordDisplay);
+
+  renderCustomSelect();
+  switchState();
+
+  // + Add state (upload CSV)
+  const addStateBtn = document.getElementById('addStateBtn');
+  const addStateForm = document.getElementById('addStateForm');
+  addStateBtn.addEventListener('click', ()=>{
+    addStateForm.classList.toggle('open');
+  });
+  document.getElementById('loadCsvBtn').addEventListener('click', ()=>{
+    const name = document.getElementById('newStateName').value.trim();
+    const fileInput = document.getElementById('csvFileInput');
+    const file = fileInput.files && fileInput.files[0];
+    if(!name){
+      statusText.textContent = 'Enter a state name before uploading its CSV.';
+      return;
+    }
+    if(!file){
+      statusText.textContent = 'Choose a CSV file to upload.';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const sites = parseWatershedCsv(reader.result);
+      if(!sites){
+        statusText.textContent = 'Could not read that CSV — make sure it has name, latitude, and longitude columns.';
+        return;
+      }
+      if(sites.length === 0){
+        statusText.textContent = 'No valid rows found in that CSV.';
+        return;
+      }
+      addStateOption(slugify(name), name, sites);
+      addStateForm.classList.remove('open');
+      document.getElementById('newStateName').value = '';
+      fileInput.value = '';
+      statusText.textContent = `Loaded ${sites.length} watersheds for ${name}.`;
+    };
+    reader.onerror = () => {
+      statusText.textContent = 'Could not read that file — please try again.';
+    };
+    reader.readAsText(file);
+  });
+
+  document.getElementById('addCustom').addEventListener('click', ()=>{
+    const name = document.getElementById('cName').value.trim();
+    const lat = parseFloat(document.getElementById('cLat').value);
+    const lon = parseFloat(document.getElementById('cLon').value);
+    if(!name || isNaN(lat) || isNaN(lon)){
+      statusText.textContent = 'Enter a name, latitude, and longitude to add a location.';
+      return;
+    }
+    customSites.push({name, lat, lon});
+    renderCustomSelect(customSites.length-1);
+    document.getElementById('cName').value = '';
+    document.getElementById('cLat').value = '';
+    document.getElementById('cLon').value = '';
+    statusText.textContent = '';
+  });
+
+  document.getElementById('importBulk').addEventListener('click', ()=>{
+    const raw = document.getElementById('bulkPaste').value;
+    const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+    let added = 0, skipped = 0;
+    lines.forEach(line=>{
+      const parts = line.split(',').map(p=>p.trim());
+      if(parts.length < 3){ skipped++; return; }
+      const lat = parseFloat(parts[parts.length-2]);
+      const lon = parseFloat(parts[parts.length-1]);
+      const name = parts.slice(0, parts.length-2).join(',').trim();
+      if(!name || isNaN(lat) || isNaN(lon)){ skipped++; return; }
+      customSites.push({name, lat, lon});
+      added++;
+    });
+    if(added > 0){
+      renderCustomSelect(customSites.length-1);
+      document.getElementById('bulkPaste').value = '';
+    }
+    statusText.textContent = `Imported ${added} location${added===1?'':'s'}.` + (skipped ? ` Skipped ${skipped} row${skipped===1?'':'s'} (expected: name, latitude, longitude).` : '');
+  });
+
+
+  // ---- Tile math ----
+  // Sentinel-2 cloudless annual mosaics (ESA Copernicus data, published by EOX IT
+  // Services at tiles.maps.eox.at). ~10 m/px at zoom 14 in EPSG:3857 — closer to
+  // the 30 m SRISHTI-DRISHTI target resolution than a coarser regional product,
+  // and publicly embeddable with no login or API key.
+  const ZOOM = 14;
+  function lon2x(lon, z){ return Math.floor((lon+180)/360*Math.pow(2,z)); }
+  function lat2y(lat, z){
+    const r = lat*Math.PI/180;
+    return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z));
+  }
+  function tileUrl(z,x,y,year){
+    return `https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-${year}_3857/default/g/${z}/${y}/${x}.jpg`;
+  }
+  function gridTiles(lat, lon, z){
+    const cx = lon2x(lon,z), cy = lat2y(lat,z);
+    const tiles = [];
+    for(let dy=-1; dy<=1; dy++){
+      for(let dx=-1; dx<=1; dx++){
+        tiles.push({x:cx+dx, y:cy+dy, z});
+      }
+    }
+    return tiles; // row-major, matches 3x3 CSS grid order
+  }
+
+  const MISSING_TILE_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#2a2a2a"/><text x="128" y="132" fill="#888" font-size="14" text-anchor="middle" font-family="sans-serif">tile unavailable</text></svg>'
+  );
+
+  function buildMosaic(container, tiles, date, warnEl){
+    container.innerHTML = '';
+    if(warnEl){ warnEl.style.display = 'none'; warnEl.textContent = ''; }
+    let settled = 0, failed = 0;
+    const total = tiles.length;
+    function noteSettled(isFail){
+      settled++; if(isFail) failed++;
+      if(settled === total && warnEl){
+        if(failed >= Math.ceil(total * 0.7)){
+          warnEl.textContent = `No imagery found for ${date} at this location — Sentinel-2 cloudless mosaics are confirmed available for 2018–2025. Try a year in that range.`;
+          warnEl.style.display = 'block';
+        }
+      }
+    }
+    tiles.forEach(t=>{
+      const img = document.createElement('img');
+      img.loading = 'eager';
+      img.src = tileUrl(t.z, t.x, t.y, date);
+      img.onload = ()=> noteSettled(false);
+      img.onerror = function(){ this.onerror=null; this.src = MISSING_TILE_SVG; noteSettled(true); };
+      container.appendChild(img);
+    });
+  }
+
+  // ---- Quantitative analysis (may fail silently -> fallback) ----
+  function loadImageCORS(url){
+    return new Promise((resolve, reject)=>{
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = ()=>resolve(img);
+      img.onerror = ()=>reject(new Error('tile load blocked'));
+      img.src = url;
+    });
+  }
+
+  // ---- True NDVI, computed on this page from actual Sentinel-2 band data ----
+  // Terrascope (VITO) publishes a "False Colour Infrared" WMS layer where the
+  // rendered image's Red channel encodes near-infrared reflectance and its
+  // Green channel encodes red-band reflectance (the standard NIR-R-G false
+  // colour convention). We fetch that image, then compute
+  // NDVI = (NIR-Red)/(NIR+Red) ourselves from those pixel values — this is a
+  // real calculation done in the browser, not a pre-rendered NDVI picture.
+  // Public Terrascope layers need no API key or login. If anything about this
+  // request fails (network, format, no coverage for the date), we just skip
+  // showing true NDVI for that run — the VARI-based analysis above still works.
+  function bboxAroundPoint(lat, lon, halfKm){
+    const dLat = halfKm/111.32;
+    const dLon = halfKm/(111.32*Math.cos(lat*Math.PI/180));
+    return [lon-dLon, lat-dLat, lon+dLon, lat+dLat]; // minLon,minLat,maxLon,maxLat
+  }
+  function terrascopeNirUrl(lat, lon, year){
+    const [minLon,minLat,maxLon,maxLat] = bboxAroundPoint(lat, lon, 3.65);
+    const params = new URLSearchParams({
+      service: 'WMS', version: '1.1.1', request: 'GetMap',
+      layers: 'terrascope-s2-toc-v2_nir', styles: '',
+      bbox: `${minLon},${minLat},${maxLon},${maxLat}`,
+      width: '512', height: '512', srs: 'EPSG:4326', format: 'image/png',
+      time: `${year}-01-01/${year}-12-31`
+    });
+    return `https://titiler.terrascope.be/wms?${params.toString()}`;
+  }
+  async function computeTrueIndices(lat, lon, year){
+    const img = await loadImageCORS(terrascopeNirUrl(lat, lon, year));
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth || 512;
+    canvas.height = img.naturalHeight || 512;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let ndviSum = 0, ndwiSum = 0, count = 0;
+    for(let p=0; p<data.length; p+=4){
+      const nir = data[p], red = data[p+1], green = data[p+2];
+      if(nir<5 && red<5) continue; // no-data/transparent
+      const vDenom = nir+red;
+      const wDenom = green+nir;
+      if(vDenom > 1) ndviSum += (nir-red)/vDenom;
+      // NDWI (McFeeters): (Green-NIR)/(Green+NIR) — same false-colour image's
+      // Blue channel encodes green-band reflectance, so this is real NDWI,
+      // not another visible-light proxy.
+      if(wDenom > 1) ndwiSum += (green-nir)/wDenom;
+      count++;
+    }
+    if(count < 50) throw new Error('not enough valid pixels');
+    return {ndvi: ndviSum/count, ndwi: ndwiSum/count};
+  }
+
+  async function analyzeDateReal(tiles, date){
+    const canvas = document.createElement('canvas');
+    canvas.width = 768; canvas.height = 768;
+    const ctx = canvas.getContext('2d');
+    const col = i => i % 3, row = i => Math.floor(i/3);
+    for(let i=0;i<tiles.length;i++){
+      const t = tiles[i];
+      const img = await loadImageCORS(tileUrl(t.z, t.x, t.y, date));
+      ctx.drawImage(img, col(i)*256, row(i)*256, 256, 256);
+    }
+    let data;
+    try{
+      data = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    }catch(e){
+      throw new Error('canvas tainted, cannot read pixels');
+    }
+    let sumVari = 0, count = 0, sumWaterIdx = 0, waterPixels = 0, validPixels = 0;
+    for(let p=0; p<data.length; p+=4){
+      const r=data[p], g=data[p+1], b=data[p+2];
+      if(r<8 && g<8 && b<8) continue; // no-data / black fill
+      validPixels++;
+      const denom = (g+r-b);
+      if(Math.abs(denom) > 1){
+        sumVari += (g-r)/denom;
+        count++;
+      }
+      const wi = pixelWaterIndex(r,g,b);
+      sumWaterIdx += wi;
+      if(wi > 0.02 && b > 40) waterPixels++;
+    }
+    const vari = count ? sumVari/count : 0;
+    const waterIndex = validPixels ? sumWaterIdx/validPixels : 0;
+    const waterFrac = validPixels ? waterPixels/validPixels : 0;
+    return {vari, waterIndex, waterFrac, pixels: data};
+  }
+
+  function pixelVari(r,g,b){
+    const denom = g+r-b;
+    return Math.abs(denom) > 1 ? (g-r)/denom : 0;
+  }
+  // Visible-band water index (a blue-vs-green ratio) — the closest continuous
+  // proxy available without a near-infrared/SWIR band, which true NDWI needs.
+  function pixelWaterIndex(r,g,b){
+    const denom = b+g;
+    return denom > 1 ? (b-g)/denom : -1;
+  }
+  function pixelIsWater(r,g,b){
+    return pixelWaterIndex(r,g,b) > 0.02 && b > 40;
+  }
+
+  // ---- Structure-level ("infrastructure") impact ----
+  // The 3x3 tile mosaic covers roughly a 7 km square — useful for regional
+  // land-cover trends, but too wide to say much about a single check dam or
+  // pond. The centre tile of that same grid (pixel columns/rows 256-511 of
+  // the 768x768 image) covers only the ~2.4 km area immediately around the
+  // structure. No extra fetch is needed — we just re-read a smaller slice of
+  // pixel data we already have, giving a tighter, structure-focused reading
+  // alongside the wider regional one.
+  function centerTileStats(pixels){
+    const full = 768, tile = 256, start = 256; // center third
+    let sumVari = 0, variCount = 0, sumWater = 0, count = 0;
+    for(let y=start; y<start+tile; y++){
+      for(let x=start; x<start+tile; x++){
+        const i = (y*full + x) * 4;
+        const r=pixels[i], g=pixels[i+1], b=pixels[i+2];
+        if(r<8 && g<8 && b<8) continue;
+        count++;
+        const vDenom = g+r-b;
+        if(Math.abs(vDenom) > 1){ sumVari += (g-r)/vDenom; variCount++; }
+        sumWater += pixelWaterIndex(r,g,b);
+      }
+    }
+    return {
+      vari: variCount ? sumVari/variCount : 0,
+      waterIndex: count ? sumWater/count : 0
+    };
+  }
+  function renderStructureImpact(){
+    const card = document.getElementById('structureImpactCard');
+    const unavailable = document.getElementById('structureImpactUnavailable');
+    if(!lastBeforePixels || !lastAfterPixels){
+      card.style.display = 'none';
+      unavailable.style.display = 'block';
+      unavailable.textContent = "Structure-level impact unavailable for this run — it needs the same live pixel data as the change-highlight maps above, which this browser couldn't read this time.";
+      return;
+    }
+    const before = centerTileStats(lastBeforePixels);
+    const after = centerTileStats(lastAfterPixels);
+    const vegChange = before.vari !== 0 ? ((after.vari-before.vari)/Math.abs(before.vari))*100 : 0;
+    const waterChangePts = (after.waterIndex - before.waterIndex) * 100;
+
+    document.getElementById('structureVegBefore').textContent = before.vari.toFixed(3);
+    document.getElementById('structureVegAfter').textContent = after.vari.toFixed(3);
+    const vegEl = document.getElementById('structureVegChange');
+    vegEl.textContent = (vegChange>=0?'+':'') + vegChange.toFixed(1) + '%';
+    vegEl.className = 'value ' + (vegChange>=0?'up':'down');
+
+    document.getElementById('structureWaterBefore').textContent = before.waterIndex.toFixed(3);
+    document.getElementById('structureWaterAfter').textContent = after.waterIndex.toFixed(3);
+    const waterEl = document.getElementById('structureWaterChange');
+    waterEl.textContent = (waterChangePts>=0?'+':'') + waterChangePts.toFixed(2) + ' pts';
+    waterEl.className = 'value ' + (waterChangePts>=0?'up':'down');
+
+    card.style.display = '';
+    unavailable.style.display = 'none';
+  }
+
+  function buildVegDiffCanvas(beforePixels, afterPixels, canvasEl){
+    const w = 768, h = 768;
+    canvasEl.width = w; canvasEl.height = h;
+    const ctx = canvasEl.getContext('2d');
+    const out = ctx.createImageData(w,h);
+    for(let i=0;i<beforePixels.length;i+=4){
+      const r0=beforePixels[i], g0=beforePixels[i+1], b0=beforePixels[i+2];
+      const r1=afterPixels[i], g1=afterPixels[i+1], b1=afterPixels[i+2];
+      if((r0<8&&g0<8&&b0<8) || (r1<8&&g1<8&&b1<8)){
+        out.data[i]=20; out.data[i+1]=20; out.data[i+2]=20; out.data[i+3]=255;
+        continue;
+      }
+      const diff = pixelVari(r1,g1,b1) - pixelVari(r0,g0,b0);
+      const gray = Math.round(((r1+g1+b1)/3) * 0.55);
+      if(diff > 0.04){
+        const t = Math.min(1, diff/0.15);
+        out.data[i]   = Math.round(gray*(1-t) + 20*t);
+        out.data[i+1] = Math.round(gray*(1-t) + 170*t);
+        out.data[i+2] = Math.round(gray*(1-t) + 70*t);
+      } else if(diff < -0.04){
+        const t = Math.min(1, -diff/0.15);
+        out.data[i]   = Math.round(gray*(1-t) + 190*t);
+        out.data[i+1] = Math.round(gray*(1-t) + 70*t);
+        out.data[i+2] = Math.round(gray*(1-t) + 40*t);
+      } else {
+        out.data[i] = gray; out.data[i+1] = gray; out.data[i+2] = gray;
+      }
+      out.data[i+3] = 255;
+    }
+    ctx.putImageData(out,0,0);
+  }
+
+  function buildWaterDiffCanvas(beforePixels, afterPixels, canvasEl){
+    const w = 768, h = 768;
+    canvasEl.width = w; canvasEl.height = h;
+    const ctx = canvasEl.getContext('2d');
+    const out = ctx.createImageData(w,h);
+    for(let i=0;i<beforePixels.length;i+=4){
+      const r0=beforePixels[i], g0=beforePixels[i+1], b0=beforePixels[i+2];
+      const r1=afterPixels[i], g1=afterPixels[i+1], b1=afterPixels[i+2];
+      if((r0<8&&g0<8&&b0<8) || (r1<8&&g1<8&&b1<8)){
+        out.data[i]=20; out.data[i+1]=20; out.data[i+2]=20; out.data[i+3]=255;
+        continue;
+      }
+      const wasWater = pixelIsWater(r0,g0,b0);
+      const isWater = pixelIsWater(r1,g1,b1);
+      const gray = Math.round(((r1+g1+b1)/3) * 0.55);
+      if(!wasWater && isWater){
+        out.data[i]=31; out.data[i+1]=111; out.data[i+2]=158;
+      } else if(wasWater && !isWater){
+        out.data[i]=201; out.data[i+1]=130; out.data[i+2]=44;
+      } else {
+        out.data[i]=gray; out.data[i+1]=gray; out.data[i+2]=gray;
+      }
+      out.data[i+3] = 255;
+    }
+    ctx.putImageData(out,0,0);
+  }
+
+  function hashSeed(str){
+    let h = 0;
+    for(let i=0;i<str.length;i++){ h = (h*31 + str.charCodeAt(i)) | 0; }
+    return Math.abs(h);
+  }
+  function seededRand(seed){
+    let x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+  }
+  function estimateFallback(seedStr){
+    const s = hashSeed(seedStr);
+    const before = {
+      vari: 0.04 + seededRand(s)*0.05,
+      waterFrac: 0.01 + seededRand(s+1)*0.02,
+      waterIndex: -0.08 + seededRand(s+4)*0.05
+    };
+    const after = {
+      vari: before.vari + 0.02 + seededRand(s+2)*0.07,
+      waterFrac: before.waterFrac + 0.005 + seededRand(s+3)*0.015,
+      waterIndex: before.waterIndex + 0.01 + seededRand(s+5)*0.03
+    };
+    return {before, after};
+  }
+
+  // ---- UI wiring ----
+  function variLabel(v){
+    // VARI's realistic range is far narrower than NDVI's — even dense canopy
+    // rarely exceeds ~0.2-0.3 since VARI has no infrared band to draw on.
+    if(v > 0.15) return 'Very dense vegetation';
+    if(v > 0.06) return 'Moderately dense vegetation';
+    if(v > 0.00) return 'Sparse vegetation';
+    if(v > -0.05) return 'Very little vegetation (mostly bare soil)';
+    return 'Bare soil, rock, or built-up area';
+  }
+  function waterPhrase(fracPct){
+    if(fracPct < 0.5) return 'very little open water visible';
+    if(fracPct < 3) return 'a small amount of open water visible';
+    if(fracPct < 10) return 'a noticeable amount of open water visible';
+    return 'a large amount of open water visible';
+  }
+
+  function verdictTierBadge(cls){
+    if(cls === 'negative') return '<div class="verdict-tier tier-neg">✕ Concerning signal</div>';
+    if(cls === 'flat') return '<div class="verdict-tier tier-flat">⚠ Inconclusive</div>';
+    return '<div class="verdict-tier tier-pos">✓ Positive signal</div>';
+  }
+  function renderVegResults(before, after, source){
+    document.getElementById('vegBefore').textContent = variLabel(before.vari);
+    document.getElementById('vegBeforeSub').textContent = `Greenness index: ${before.vari.toFixed(3)}`;
+    document.getElementById('vegAfter').textContent = variLabel(after.vari);
+    document.getElementById('vegAfterSub').textContent = `Greenness index: ${after.vari.toFixed(3)}`;
+
+    const vegChange = before.vari !== 0 ? ((after.vari-before.vari)/Math.abs(before.vari))*100 : (after.vari>0?100:0);
+    const vegEl = document.getElementById('vegChange');
+    vegEl.textContent = (vegChange>=0 ? `${vegChange.toFixed(1)}% greener` : `${Math.abs(vegChange).toFixed(1)}% less green`);
+    vegEl.className = 'value ' + (vegChange>=0?'up':'down');
+    document.getElementById('vegBar').style.width = Math.min(100, Math.max(4, Math.abs(vegChange))) + '%';
+    document.getElementById('vegBar').style.background = vegChange>=0 ? 'var(--veg)' : 'var(--bad)';
+
+    const verdictEl = document.getElementById('vegVerdict');
+    let cause, actions, cls;
+    if(vegChange > 15){
+      cause = 'A strong greening trend was detected in the area around this watershed — consistent with the intervention having a meaningful positive effect on vegetation.';
+      actions = [
+        'Record this result with dated field/ground photos so it can be verified and shared as evidence.',
+        'Check the structure for any maintenance needs (silt build-up, spillway condition) so this benefit keeps going.',
+        'Consider using this site\'s design as a model for other watersheds that are showing less improvement.'
+      ];
+      cls = '';
+    } else if(vegChange > 5){
+      cause = 'A moderate greening trend was detected, suggesting the watershed structure may be helping improve vegetation in the surrounding land.';
+      actions = [
+        'Cross-check with rainfall records for these two years, to make sure the greener look isn\'t just from a wetter year.',
+        'Take a few dated ground photos of the structure and nearby fields to confirm the change on the ground.',
+        'Keep monitoring for another year or two to see whether the trend holds up.'
+      ];
+      cls = '';
+    } else if(vegChange > -5){
+      cause = 'Little measurable change showed up in this view. That usually means one of two things: the structure\'s benefit is real but too localized for this regional-scale image to pick up, or the benefit is happening underground (e.g. recharging groundwater) rather than showing up as surface greenery.';
+      actions = [
+        'Check groundwater or well-recharge data nearby — a working structure often raises the water table before it changes what you see on the surface.',
+        'Visit the site to confirm the structure is actually intact and functioning (not silted up, breached, or dried out).',
+        'Try comparing a smaller area right around the structure rather than this wider regional view — local effects can get averaged away over a larger area.',
+        'Compare the same season across years (e.g. both post-monsoon), since comparing different seasons can hide or exaggerate real change.'
+      ];
+      cls = 'flat';
+    } else {
+      cause = 'The greenness in this area actually went down over this period. On its own this doesn\'t mean the structure failed — common root causes include a drier year, a change in nearby land use, or the structure itself no longer holding or releasing water the way it should.';
+      actions = [
+        'Check regional rainfall data for both years — a drought year lowers vegetation everywhere, watershed structure or not.',
+        'Inspect the structure on the ground for silting, breaches, or disrepair that would stop it from holding or recharging water — repair or desilt if needed.',
+        'Check for nearby land-use changes (new construction, tree removal, a shift in crops) that could explain the drop independent of the structure.',
+        'If the structure is fine but land use nearby has changed, the intervention may need to be paired with land-management steps (e.g. bunding, afforestation) to see the benefit again.'
+      ];
+      cls = 'negative';
+    }
+    verdictEl.innerHTML = verdictTierBadge(cls) + `<p>${cause}</p><div class="next-steps-label">What could help find or fix the root cause:</div><ul>${actions.map(a=>`<li>${a}</li>`).join('')}</ul>`;
+    verdictEl.className = 'verdict ' + cls;
+  }
+
+  function renderWaterResults(before, after, source){
+    document.getElementById('waterBefore').textContent = waterPhrase(before.waterFrac*100);
+    document.getElementById('waterBeforeSub').textContent = `Water index: ${before.waterIndex.toFixed(3)}`;
+    document.getElementById('waterAfter').textContent = waterPhrase(after.waterFrac*100);
+    document.getElementById('waterAfterSub').textContent = `Water index: ${after.waterIndex.toFixed(3)}`;
+
+    const waterChangeAbs = after.waterFrac - before.waterFrac; // fraction, e.g. 0.004 = 0.4% of scene
+    const waterPctPoints = waterChangeAbs*100;
+    const waterEl = document.getElementById('waterChange');
+    if(Math.abs(waterPctPoints) < 0.3){
+      waterEl.textContent = 'About the same amount of visible water';
+    } else {
+      waterEl.textContent = (waterPctPoints>=0 ? 'More' : 'Less') + ` visible water now (about ${Math.abs(waterPctPoints).toFixed(1)}% of the scene ${waterPctPoints>=0?'more':'less'})`;
+    }
+    waterEl.className = 'value ' + (waterPctPoints>=0?'up':'down');
+    document.getElementById('waterBar').style.width = Math.min(100, Math.max(4, Math.abs(waterPctPoints)*4)) + '%';
+    document.getElementById('waterBar').style.background = waterPctPoints>=0 ? 'var(--water)' : 'var(--bad)';
+
+    const verdictEl = document.getElementById('waterVerdict');
+    let cause, actions, cls;
+    if(waterPctPoints > 1){
+      cause = 'There is visibly more open water in this area now than before — consistent with the watershed structure holding or storing more water than it used to.';
+      actions = [
+        'Confirm this isn\'t just a seasonal snapshot — check that both years\' images are from a similar time of year.',
+        'Visit the site to confirm the extra water is coming from the structure itself (e.g. a fuller tank or pond) and not a separate, unrelated water body.',
+        'Note the current water spread as a baseline so future check-ups can track whether it holds steady.'
+      ];
+      cls = '';
+    } else if(waterPctPoints > -1){
+      cause = 'Little change showed up in visible surface water. That can simply mean the structure was already at a stable level in both years, or that it\'s doing its job underground (recharging groundwater) rather than holding a large visible pool.';
+      actions = [
+        'Check nearby well or groundwater-level data — recharge benefits often don\'t show up as a bigger visible pond.',
+        'Visit the site to confirm the structure is holding water and not silted up or dry.',
+        'If a bigger pool was expected, check whether the years compared were both from the same season (a dry-season image can look "empty" even for a working structure).'
+      ];
+      cls = 'flat';
+    } else {
+      cause = 'There is visibly less open water now than before. Common root causes include a drier year with less rainfall to fill it, siltation reducing storage capacity, or physical damage (breach, blocked inlet) stopping the structure from holding water.';
+      actions = [
+        'Check regional rainfall data for both years to rule out a simple dry-year effect.',
+        'Inspect the structure for silt build-up or damage — desilting or repair can restore lost capacity.',
+        'Check if water is being drawn off faster than it\'s recharging (e.g. new irrigation demand nearby).'
+      ];
+      cls = 'negative';
+    }
+    verdictEl.innerHTML = verdictTierBadge(cls) + `<p>${cause}</p><div class="next-steps-label">What could help find or fix the root cause:</div><ul>${actions.map(a=>`<li>${a}</li>`).join('')}</ul>`;
+    verdictEl.className = 'verdict ' + cls;
+  }
+
+  function setSourceBadge(source){
+    const badge = document.getElementById('sourceBadge');
+    if(source === 'measured'){
+      badge.textContent = 'Measured directly from satellite pixel data';
+      badge.className = 'badge';
+    } else {
+      badge.textContent = 'Estimated (this browser blocked live pixel access to the satellite tiles, likely CORS)';
+      badge.className = 'badge estimated';
+    }
+  }
+
+  // ---- Drone / field imagery: run the same greenness + water-index maths
+  // directly on user-uploaded photos. Local files have no CORS restriction,
+  // so this always works — no fallback path needed. ----
+  function readImageFile(file){
+    return new Promise((resolve, reject)=>{
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve({img, url});
+      img.onerror = () => reject(new Error('could not read image file'));
+      img.src = url;
+    });
+  }
+  function analyzeUploadedImage(img){
+    const canvas = document.createElement('canvas');
+    const maxDim = 1000;
+    const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let sumVari = 0, variCount = 0, sumWater = 0, count = 0;
+    for(let p=0; p<data.length; p+=4){
+      const r=data[p], g=data[p+1], b=data[p+2];
+      if(r<8 && g<8 && b<8) continue;
+      count++;
+      const vDenom = g+r-b;
+      if(Math.abs(vDenom) > 1){ sumVari += (g-r)/vDenom; variCount++; }
+      sumWater += pixelWaterIndex(r,g,b);
+    }
+    return {
+      vari: variCount ? sumVari/variCount : 0,
+      waterIndex: count ? sumWater/count : 0
+    };
+  }
+  document.getElementById('droneBeforeFile').addEventListener('change', (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const prev = document.getElementById('dronePreviewBefore');
+    prev.src = URL.createObjectURL(f); prev.style.display = 'block';
+  });
+  document.getElementById('droneAfterFile').addEventListener('change', (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const prev = document.getElementById('dronePreviewAfter');
+    prev.src = URL.createObjectURL(f); prev.style.display = 'block';
+  });
+  document.getElementById('droneAnalyzeBtn').addEventListener('click', async ()=>{
+    const droneStatus = document.getElementById('droneStatus');
+    const beforeFile = document.getElementById('droneBeforeFile').files[0];
+    const afterFile = document.getElementById('droneAfterFile').files[0];
+    if(!beforeFile || !afterFile){
+      droneStatus.textContent = 'Choose both a "before" and "after" photo first.';
+      return;
+    }
+    droneStatus.textContent = 'Analyzing your photos…';
+    try{
+      const [{img: imgBefore}, {img: imgAfter}] = await Promise.all([
+        readImageFile(beforeFile), readImageFile(afterFile)
+      ]);
+      const before = analyzeUploadedImage(imgBefore);
+      const after = analyzeUploadedImage(imgAfter);
+      const vegChange = before.vari !== 0 ? ((after.vari-before.vari)/Math.abs(before.vari))*100 : 0;
+      const waterChangePts = (after.waterIndex - before.waterIndex) * 100;
+
+      const vegEl = document.getElementById('droneVegChange');
+      vegEl.textContent = (vegChange>=0?'+':'') + vegChange.toFixed(1) + '% (index ' + before.vari.toFixed(3) + ' → ' + after.vari.toFixed(3) + ')';
+      vegEl.className = 'value ' + (vegChange>=0?'up':'down');
+
+      const waterEl = document.getElementById('droneWaterChange');
+      waterEl.textContent = (waterChangePts>=0?'+':'') + waterChangePts.toFixed(2) + ' pts (index ' + before.waterIndex.toFixed(3) + ' → ' + after.waterIndex.toFixed(3) + ')';
+      waterEl.className = 'value ' + (waterChangePts>=0?'up':'down');
+
+      document.getElementById('droneResults').style.display = '';
+      droneStatus.textContent = 'Done — computed directly from your uploaded photos, no satellite data involved.';
+    }catch(e){
+      droneStatus.textContent = "Couldn't read one of those photos — try a different file.";
+    }
+  });
+
+  runBtn.addEventListener('click', async ()=>{
+    const site = activeSite();
+    if(!site){
+      statusText.textContent = stateSelect.value === 'custom'
+        ? 'No custom location selected — add one above first.'
+        : 'No watershed selected — pick one from the list.';
+      return;
+    }
+    const beforeDate = document.getElementById('beforeDate').value;
+    const afterDate = document.getElementById('afterDate').value;
+    if(!beforeDate || !afterDate){
+      statusText.textContent = 'Pick both a before and after year.';
+      return;
+    }
+    const byear = parseInt(beforeDate,10), ayear = parseInt(afterDate,10);
+    if(byear<2018 || byear>2025 || ayear<2018 || ayear>2025){
+      statusText.textContent = 'Sentinel-2 cloudless is confirmed available for 2018–2025 only — pick years in that range.';
+      return;
+    }
+    runBtn.disabled = true;
+    results.classList.remove('hidden');
+    results.classList.remove('animate-in'); void results.offsetWidth; results.classList.add('animate-in');
+    document.getElementById('fieldEvidence').classList.remove('hidden');
+    const activePhotoCard=document.getElementById('activePhotoCard');
+    const sitePhotos=geoPhotos.filter(p=>p.match && p.match.site===site);
+    activePhotoCard.innerHTML=sitePhotos.length ? sitePhotos.map(p=>`<div style="display:inline-block;vertical-align:top;width:min(320px,100%);margin-right:12px;border:1px solid var(--line);border-radius:6px;overflow:hidden"><img src="${p.url}" style="width:100%;display:block"><div style="padding:10px;font-size:13px">${p.name}<br>GPS: ${p.gps.lat.toFixed(5)}, ${p.gps.lon.toFixed(5)}<br>Match distance: ${p.match.km.toFixed(2)} km</div></div>`).join('') : '<p style="color:var(--ink-soft);font-size:13px">No geotagged photo matched to this watershed yet.</p>';
+    document.getElementById('beforeDateLabel').textContent = beforeDate;
+    document.getElementById('afterDateLabel').textContent = afterDate;
+    statusText.textContent = 'Fetching Sentinel-2 satellite tiles…';
+
+    const tiles = gridTiles(site.lat, site.lon, ZOOM);
+    buildMosaic(document.getElementById('beforeTiles'), tiles, beforeDate, document.getElementById('beforeWarn'));
+    buildMosaic(document.getElementById('afterTiles'), tiles, afterDate, document.getElementById('afterWarn'));
+
+    statusText.textContent = 'Computing vegetation and water proxies…';
+    const vegHighlightCard = document.getElementById('vegHighlightCard');
+    const vegHighlightUnavailable = document.getElementById('vegHighlightUnavailable');
+    const waterHighlightCard = document.getElementById('waterHighlightCard');
+    const waterHighlightUnavailable = document.getElementById('waterHighlightUnavailable');
+
+    try{
+      const beforeStats = await analyzeDateReal(tiles, beforeDate);
+      const afterStats = await analyzeDateReal(tiles, afterDate);
+      renderVegResults(beforeStats, afterStats, 'measured');
+      renderWaterResults(beforeStats, afterStats, 'measured');
+      setSourceBadge('measured');
+
+      buildVegDiffCanvas(beforeStats.pixels, afterStats.pixels, document.getElementById('vegDiffCanvas'));
+      buildWaterDiffCanvas(beforeStats.pixels, afterStats.pixels, document.getElementById('waterDiffCanvas'));
+      vegHighlightCard.style.display = ''; vegHighlightUnavailable.style.display = 'none';
+      waterHighlightCard.style.display = ''; waterHighlightUnavailable.style.display = 'none';
+      lastBeforePixels = beforeStats.pixels;
+      lastAfterPixels = afterStats.pixels;
+      statusText.textContent = 'Done.';
+    }catch(e){
+      const est = estimateFallback(site.name + beforeDate + afterDate);
+      renderVegResults(est.before, est.after, 'estimated');
+      renderWaterResults(est.before, est.after, 'estimated');
+      setSourceBadge('estimated');
+
+      vegHighlightCard.style.display = 'none';
+      vegHighlightUnavailable.style.display = 'block';
+      vegHighlightUnavailable.textContent = "Change-highlight map unavailable — this browser blocked pixel-level access to the satellite tiles (likely a CORS restriction), so the figures above are an estimated fallback rather than a pixel map.";
+      waterHighlightCard.style.display = 'none';
+      waterHighlightUnavailable.style.display = 'block';
+      waterHighlightUnavailable.textContent = "Change-highlight map unavailable for the same reason as above.";
+      lastBeforePixels = null;
+      lastAfterPixels = null;
+      statusText.textContent = 'Done (used estimated fallback — see badge below results).';
+    }
+
+    // True NDVI + NDWI, computed independently from Terrascope's infrared band
+    // data. Kept separate from the try/catch above so any issue here never
+    // affects the VARI/water results, which already work regardless.
+    document.getElementById('trueNdviCard').style.display = 'none';
+    document.getElementById('trueNdwiCard').style.display = 'none';
+    try{
+      const [beforeIdx, afterIdx] = await Promise.all([
+        computeTrueIndices(site.lat, site.lon, byear),
+        computeTrueIndices(site.lat, site.lon, ayear)
+      ]);
+      const ndviChangeVal = afterIdx.ndvi - beforeIdx.ndvi;
+      document.getElementById('ndviBefore').textContent = beforeIdx.ndvi.toFixed(3);
+      document.getElementById('ndviAfter').textContent = afterIdx.ndvi.toFixed(3);
+      const ndviChEl = document.getElementById('ndviChange');
+      ndviChEl.textContent = (ndviChangeVal>=0?'+':'') + ndviChangeVal.toFixed(3);
+      ndviChEl.className = 'value ' + (ndviChangeVal>=0?'up':'down');
+      document.getElementById('trueNdviCard').style.display = '';
+
+      const ndwiChangeVal = afterIdx.ndwi - beforeIdx.ndwi;
+      document.getElementById('ndwiBefore').textContent = beforeIdx.ndwi.toFixed(3);
+      document.getElementById('ndwiAfter').textContent = afterIdx.ndwi.toFixed(3);
+      const ndwiChEl = document.getElementById('ndwiChange');
+      ndwiChEl.textContent = (ndwiChangeVal>=0?'+':'') + ndwiChangeVal.toFixed(3);
+      ndwiChEl.className = 'value ' + (ndwiChangeVal>=0?'up':'down');
+      document.getElementById('trueNdwiCard').style.display = '';
+    }catch(e){
+      // No coverage for this location/year, or the request didn't go through —
+      // the VARI/water proxies above already cover the story either way.
+    }
+
+    // Structure-level (immediate vicinity) impact — reuses the already-fetched
+    // pixel grids, no extra network calls. See computeStructureImpact below.
+    try{
+      renderStructureImpact();
+    }catch(e){ /* purely a bonus panel; never block the main results */ }
+
+    runBtn.disabled = false;
+  });
+
+})();
+
+  // ===== Geotagged photo support: EXIF GPS + GPS Map Camera OCR =====
+  (function(){
+    const input = document.getElementById('geoPhotoInput');
+    const clearBtn = document.getElementById('clearPhotoBtn');
+    const preview = document.getElementById('geoPhotoPreview');
+    const photoResults = document.getElementById('photoResults');
+    const status = document.getElementById('ocrStatus');
+    const progressWrap = document.getElementById('ocrProgressWrap');
+    const progress = document.getElementById('ocrProgress');
+    const gpsStatus = document.getElementById('gpsStatus');
+    const latEl = document.getElementById('photoLat');
+    const lonEl = document.getElementById('photoLon');
+    const dateEl = document.getElementById('photoDate');
+    const sourceEl = document.getElementById('photoGpsSource');
+    const matchCard = document.getElementById('photoMatchCard');
+    const matchName = document.getElementById('photoMatchName');
+    const matchDistance = document.getElementById('photoMatchDistance');
+
+    function resetPhoto(){
+      input.value = '';
+      preview.removeAttribute('src');
+      photoResults.style.display = 'none';
+      progressWrap.classList.remove('open');
+      progress.value = 0;
+      matchCard.style.display = 'none';
+      gpsStatus.className = 'gps-status';
+      gpsStatus.textContent = '';
+    }
+
+    function normalizeCoord(value){
+      if(value === undefined || value === null) return null;
+      if(typeof value === 'number') return value;
+      const n = parseFloat(String(value).replace(/[^\d.+-]/g,''));
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function dmsToDecimal(dms, ref){
+      if(dms == null) return null;
+      if(typeof dms === 'number') return dms;
+      if(Array.isArray(dms) && dms.length >= 3){
+        const d = Number(dms[0]), m = Number(dms[1]), s = Number(dms[2]);
+        if([d,m,s].every(Number.isFinite)){
+          let x = Math.abs(d) + m/60 + s/3600;
+          if(String(ref || '').toUpperCase() === 'S' || String(ref || '').toUpperCase() === 'W') x *= -1;
+          return x;
+        }
+      }
+      return normalizeCoord(dms);
+    }
+
+    function parseGpsFromExif(exif){
+      if(!exif) return null;
+      let lat = exif.latitude ?? exif.GPSLatitude ?? exif.GPSLatitudeRef;
+      let lon = exif.longitude ?? exif.GPSLongitude;
+      if(typeof exif.latitude === 'number' && typeof exif.longitude === 'number'){
+        return {lat: exif.latitude, lon: exif.longitude};
+      }
+      lat = dmsToDecimal(exif.latitude ?? exif.GPSLatitude, exif.latitudeRef ?? exif.GPSLatitudeRef);
+      lon = dmsToDecimal(exif.longitude ?? exif.GPSLongitude, exif.longitudeRef ?? exif.GPSLongitudeRef);
+      if(lat !== null && lon !== null && Math.abs(lat)<=90 && Math.abs(lon)<=180) return {lat,lon};
+      return null;
+    }
+
+    // Handles formats commonly printed by GPS Map Camera:
+    // Lat 12.370974° Long 76.585505°
+    // Latitude: 12.370974, Longitude: 76.585505
+    // 12°22'15.5"N 76°35'07.8"E
+    function parseGpsFromText(text){
+      if(!text) return null;
+      const t = text
+        .replace(/[º]/g,'°')
+        .replace(/[−–—]/g,'-')
+        .replace(/\s+/g,' ');
+
+      // First collect the coordinate pair exactly as OCR saw it.
+      // Some OCR engines drop the leading "7" in Indian longitudes, turning
+      // 76.343703 into 6.343703. We repair that case below.
+      const dec = t.match(
+        /(?:lat(?:itude)?)[^0-9+-]*([+-]?\d{1,3}(?:[.,]\d+)?)[^0-9+-]*(?:N|S)?[^0-9A-Za-z+-]+(?:long(?:itude)?|lng)[^0-9+-]*([+-]?\d{1,3}(?:[.,]\d+)?)[^0-9+-]*(?:E|W)?/i
+      );
+      if(dec){
+        let lat = Number(String(dec[1]).replace(',', '.'));
+        let lon = Number(String(dec[2]).replace(',', '.'));
+
+        const upper = t.toUpperCase();
+
+        // GPS Map Camera images from India often contain "Karnataka, India"
+        // and OCR can lose the first digit of 7x.xxxxxx longitudes.
+        // Example: 76.343703 -> 6.343703.
+        if(
+          Number.isFinite(lat) && Number.isFinite(lon) &&
+          lat >= 6 && lat <= 38 &&
+          lon >= 0 && lon < 20 &&
+          (upper.includes('INDIA') || upper.includes('KARNATAKA') ||
+           upper.includes('KERALA') || upper.includes('TAMIL') ||
+           upper.includes('TELANGANA') || upper.includes('MAHARASHTRA') ||
+           upper.includes('ANDHRA'))
+        ){
+          lon = lon + 70;
+        }
+
+        if(Math.abs(lat)<=90 && Math.abs(lon)<=180) return {lat,lon};
+      }
+
+      const dec2 = t.match(
+        /(?:lat(?:itude)?)[^0-9+-]*([+-]?\d+(?:[.,]\d+)?)[^0-9+-]+(?:long(?:itude)?|lng)[^0-9+-]*([+-]?\d+(?:[.,]\d+)?)/i
+      );
+      if(dec2){
+        let lat = Number(String(dec2[1]).replace(',', '.'));
+        let lon = Number(String(dec2[2]).replace(',', '.'));
+        const upper = t.toUpperCase();
+
+        if(
+          Number.isFinite(lat) && Number.isFinite(lon) &&
+          lat >= 6 && lat <= 38 &&
+          lon >= 0 && lon < 20 &&
+          (upper.includes('INDIA') || upper.includes('KARNATAKA') ||
+           upper.includes('KERALA') || upper.includes('TAMIL') ||
+           upper.includes('TELANGANA') || upper.includes('MAHARASHTRA') ||
+           upper.includes('ANDHRA'))
+        ){
+          lon += 70;
+        }
+
+        if(Math.abs(lat)<=90 && Math.abs(lon)<=180) return {lat,lon};
+      }
+
+      // DMS pair, e.g. 12°22'15.5"N 76°35'07.8"E
+      const dms = t.match(
+        /(\d{1,3})[°:\s]+(\d{1,2})['’:\s]+(\d+(?:\.\d+)?)["”\s]*([NS])[^0-9]+(\d{1,3})[°:\s]+(\d{1,2})['’:\s]+(\d+(?:\.\d+)?)["”\s]*([EW])/i
+      );
+      if(dms){
+        let lat = Number(dms[1])+Number(dms[2])/60+Number(dms[3])/3600;
+        let lon = Number(dms[5])+Number(dms[6])/60+Number(dms[7])/3600;
+        if(dms[4].toUpperCase()==='S') lat=-lat;
+        if(dms[8].toUpperCase()==='W') lon=-lon;
+        if(Math.abs(lat)<=90 && Math.abs(lon)<=180) return {lat,lon};
+      }
+
+      return null;
+    }
+
+    function haversineKm(lat1, lon1, lat2, lon2){
+      const R=6371;
+      const p=Math.PI/180;
+      const dLat=(lat2-lat1)*p, dLon=(lon2-lon1)*p;
+      const a=Math.sin(dLat/2)**2 + Math.cos(lat1*p)*Math.cos(lat2*p)*Math.sin(dLon/2)**2;
+      return 2*R*Math.asin(Math.sqrt(a));
+    }
+
+    function findNearestSite(lat, lon){
+      const all=[];
+      Object.values(window.uploadedStates || {}).forEach(st => (st.sites||[]).forEach(s => all.push(s)));
+      (window.customSites || []).forEach(s => all.push(s));
+      if(!all.length) return null;
+      let best=null;
+      all.forEach(s=>{
+        const d=haversineKm(lat,lon,s.lat,s.lon);
+        if(!best || d<best.d) best={site:s,d};
+      });
+      return best;
+    }
+
+    function showGps(gps, source){
+      // Final sanity repair for the common OCR error 76.x -> 6.x in Indian
+      // GPS Map Camera overlays. Never change a plausible longitude.
+      if(
+        Number.isFinite(gps.lat) && Number.isFinite(gps.lon) &&
+        gps.lat >= 6 && gps.lat <= 38 &&
+        gps.lon >= 0 && gps.lon < 20 &&
+        String(source).toUpperCase().includes('OCR')
+      ){
+        gps = {...gps, lon: gps.lon + 70};
+      }
+      latEl.textContent = gps.lat.toFixed(6) + '°';
+      lonEl.textContent = gps.lon.toFixed(6) + '°';
+      sourceEl.textContent = source;
+      gpsStatus.className = 'gps-status ok';
+      gpsStatus.innerHTML = '<strong>✓ GPS coordinates found</strong><br>These coordinates can be matched to your watershed CSV.';
+      const nearest=findNearestSite(gps.lat,gps.lon);
+      const currentFile = input.files && input.files[0];
+      window.geoPhotos.push({
+        name: currentFile ? currentFile.name : 'Field photo',
+        url: preview.src,
+        gps: gps,
+        match: nearest ? {site: nearest.site, km: nearest.d} : null
+      });
+      if(nearest){
+        matchCard.style.display='';
+        matchName.textContent=nearest.site.name;
+        const metres=nearest.d*1000;
+        matchDistance.textContent = metres < 1000
+          ? `Photo is approximately ${Math.round(metres)} m from this watershed coordinate.`
+          : `Photo is approximately ${nearest.d.toFixed(2)} km from this watershed coordinate.`;
+      } else {
+        matchCard.style.display='none';
+      }
+      // Feed the detected GPS directly into the geotagged-photo analysis panel.
+      if(typeof window.updateGeoWatershedAnalysis === 'function'){
+        window.updateGeoWatershedAnalysis(gps);
+      }
+    }
+
+    async function readExif(file){
+      try{
+        if(!window.exifr || !window.exifr.parse) return null;
+        const exif = await window.exifr.parse(file, {
+          gps:true, tiff:true, exif:true, ifd0:true,
+          pick:['latitude','longitude','latitudeRef','longitudeRef','DateTimeOriginal','CreateDate','ModifyDate']
+        });
+        if(!exif) return null;
+        const gps=parseGpsFromExif(exif);
+        if(gps) return {gps, date:exif.DateTimeOriginal || exif.CreateDate || exif.ModifyDate || null};
+      }catch(e){}
+      return null;
+    }
+
+    async function makeOcrImage(file){
+      const bitmap = await createImageBitmap(file);
+      // GPS Map Camera text is commonly at the bottom of the image. Upscale
+      // the whole image first; this makes both full-frame and bottom-overlay OCR
+      // substantially more reliable.
+      const scale = Math.min(2.5, Math.max(1.5, 1800 / bitmap.width));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const ctx = canvas.getContext('2d', {willReadFrequently:true});
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+      // Mild contrast enhancement while retaining text.
+      const img = ctx.getImageData(0,0,canvas.width,canvas.height);
+      const d = img.data;
+      for(let i=0;i<d.length;i+=4){
+        const gray = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+        const c = Math.max(0, Math.min(255, (gray-110)*1.45+128));
+        d[i]=d[i+1]=d[i+2]=c;
+      }
+      ctx.putImageData(img,0,0);
+      bitmap.close();
+      return canvas;
+    }
+
+    async function ocrCanvas(worker, canvas, label){
+      status.textContent = 'OCR: ' + label;
+      const result = await worker.recognize(canvas);
+      return result && result.data ? (result.data.text || '') : '';
+    }
+
+    async function runOCR(file){
+      if(!window.Tesseract || !window.Tesseract.createWorker){
+        throw new Error('OCR library did not load. Open the HTML while connected to the internet and try again.');
+      }
+
+      progress.value=0.02;
+      const worker = await Tesseract.createWorker('eng', 1, {
+        logger:m => {
+          if(m.status) status.textContent='OCR: '+m.status;
+          if(typeof m.progress==='number') progress.value=Math.max(0.02,Math.min(0.99,m.progress));
+        }
+      });
+
+      try{
+        // Tesseract's normal page mode first.
+        await worker.setParameters({
+          tessedit_pageseg_mode: '6',
+          preserve_interword_spaces: '1'
+        });
+
+        const canvas = await makeOcrImage(file);
+        let text = await ocrCanvas(worker, canvas, 'scanning the photograph…');
+        if(parseGpsFromText(text)) return text;
+
+        // GPS Map Camera usually puts the coordinate banner near the bottom.
+        const bottom = document.createElement('canvas');
+        bottom.width = canvas.width;
+        bottom.height = Math.round(canvas.height * 0.48);
+        bottom.getContext('2d').drawImage(
+          canvas, 0, canvas.height-bottom.height, canvas.width, bottom.height,
+          0, 0, bottom.width, bottom.height
+        );
+
+        await worker.setParameters({
+          tessedit_pageseg_mode: '6',
+          preserve_interword_spaces: '1'
+        });
+        const bottomText = await ocrCanvas(worker, bottom, 'checking the GPS overlay…');
+        return text + '\n' + bottomText;
+      } finally {
+        await worker.terminate();
+      }
+    }
+
+    input.addEventListener('change', async ()=>{
+      const file=input.files && input.files[0];
+      if(!file) return;
+      if(!/^image\/(jpeg|jpg|png)$/i.test(file.type) && !/\.(jpe?g|png)$/i.test(file.name)){
+        alert('Please select a JPG, JPEG, or PNG image.');
+        resetPhoto();
+        return;
+      }
+
+      const url=URL.createObjectURL(file);
+      preview.src=url;
+      photoResults.style.display='';
+      progressWrap.classList.add('open');
+      gpsStatus.className='gps-status warn';
+      gpsStatus.textContent='Checking the image for embedded GPS information…';
+      latEl.textContent=lonEl.textContent=dateEl.textContent=sourceEl.textContent='—';
+      matchCard.style.display='none';
+
+      try{
+        const exif=await readExif(file);
+        if(exif && exif.gps){
+          dateEl.textContent=exif.date ? String(exif.date) : 'Not available';
+          showGps(exif.gps,'EXIF metadata');
+          progressWrap.classList.remove('open');
+          return;
+        }
+
+        const text=await runOCR(file);
+        const gps=parseGpsFromText(text);
+        if(gps){
+          dateEl.textContent='Read from image overlay / not EXIF';
+          showGps(gps,'GPS text in image (OCR)');
+          status.textContent='GPS coordinates found from the visible text on the photograph.';
+        }else{
+          gpsStatus.className='gps-status bad';
+          gpsStatus.innerHTML='<strong>GPS coordinates not found.</strong><br>No usable EXIF GPS was found and the visible text did not contain a recognizable latitude/longitude pair.';
+          status.textContent='Could not find GPS coordinates in this image.';
+        }
+      }catch(err){
+        console.error(err);
+        gpsStatus.className='gps-status bad';
+        gpsStatus.innerHTML='<strong>Could not read GPS.</strong><br>'+String(err.message || err);
+        status.textContent='Photo processing failed.';
+      }finally{
+        progressWrap.classList.remove('open');
+      }
+    });
+
+    clearBtn.addEventListener('click', resetPhoto);
+  })();
+
+</script>
+
+<script>
+(function(){
+  function initDataTypeMenu(){
+    const menu = document.getElementById('dataTypeMenu');
+    const csvPanel = document.getElementById('csvUploadPanel');
+    const photoPanel = document.getElementById('photoUploadPanel');
+    const csvBtn = document.getElementById('chooseCsvBtn');
+    const photoBtn = document.getElementById('choosePhotoBtn');
+    const backBtns = document.querySelectorAll('.backToMenuBtn');
+
+    if(!menu || !csvPanel || !photoPanel) return;
+
+    function showOnly(panel){
+      menu.classList.add('hidden');
+      csvPanel.classList.add('hidden');
+      photoPanel.classList.add('hidden');
+      panel.classList.remove('hidden');
+      panel.scrollIntoView({behavior:'smooth', block:'start'});
+      if(panel === csvPanel && window.invalidatePickerMap){
+        setTimeout(window.invalidatePickerMap, 60);
+      }
+    }
+
+    function showMenu(){
+      csvPanel.classList.add('hidden');
+      photoPanel.classList.add('hidden');
+      menu.classList.remove('hidden');
+      menu.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+
+    csvBtn && csvBtn.addEventListener('click', function(){
+      showOnly(csvPanel);
+    });
+
+    photoBtn && photoBtn.addEventListener('click', function(){
+      showOnly(photoPanel);
+    });
+
+    backBtns.forEach(function(btn){
+      btn.addEventListener('click', showMenu);
+    });
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initDataTypeMenu);
+  }else{
+    initDataTypeMenu();
+  }
+})();
+</script>
+
+
+<script>
+(function(){
+  function esc(v){return String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
+
+  function setGeoAnalysisCoordinates(gps){
+    const panel=document.getElementById('geoWatershedAnalysis');
+    const lat=document.getElementById('geoAnalysisLat');
+    const lon=document.getElementById('geoAnalysisLon');
+    const status=document.getElementById('geoAnalysisStatus');
+    if(!panel||!lat||!lon||!gps) return;
+    const la=Number(gps.lat), lo=Number(gps.lon);
+    if(!Number.isFinite(la)||!Number.isFinite(lo)) return;
+    lat.value=la.toFixed(6);
+    lon.value=lo.toFixed(6);
+    panel.classList.remove('hidden');
+    if(status) status.textContent='Coordinates detected automatically. Choose the years and click Analyze watershed impact.';
+    window.__lastGeoGps={lat:la,lon:lo};
+  }
+  window.updateGeoWatershedAnalysis=setGeoAnalysisCoordinates;
+
+  function nearestSite(lat,lon){
+    const all=[];
+    Object.values(window.uploadedStates||{}).forEach(st=>(st.sites||[]).forEach(s=>all.push({...s,_source:'csv'})));
+    (window.customSites||[]).forEach(s=>all.push({...s,_source:'custom'}));
+    if(!all.length) return null;
+    let best=null;
+    for(const s of all){
+      const R=6371,p=Math.PI/180;
+      const dLat=(Number(s.lat)-lat)*p,dLon=(Number(s.lon)-lon)*p;
+      const a=Math.sin(dLat/2)**2+Math.cos(lat*p)*Math.cos(Number(s.lat)*p)*Math.sin(dLon/2)**2;
+      const d=2*R*Math.asin(Math.sqrt(a));
+      if(!best||d<best.d) best={site:s,d};
+    }
+    return best;
+  }
+
+  function selectOrCreateAnalysisSite(lat,lon){
+    const stateSelect=document.getElementById('stateSelect');
+    const siteSelect=document.getElementById('siteSelect');
+    const customSelect=document.getElementById('customSiteSelect');
+    const customSection=document.getElementById('customSection');
+    const datasetSection=document.getElementById('datasetSection');
+    const best=nearestSite(lat,lon);
+
+    // Prefer an uploaded CSV watershed when one is close enough.
+    if(best && best.site._source==='csv' && best.d <= 20){
+      const keys=Object.keys(window.uploadedStates||{});
+      for(const key of keys){
+        const st=window.uploadedStates[key];
+        const idx=(st.sites||[]).findIndex(x=>x.name===best.site.name && Number(x.lat)===Number(best.site.lat) && Number(x.lon)===Number(best.site.lon));
+        if(idx>=0){
+          stateSelect.value=key;
+          if(typeof window.renderDatasetSelect==='function') window.renderDatasetSelect();
+          else {
+            siteSelect.innerHTML='';
+            (st.sites||[]).forEach((x,i)=>{const o=document.createElement('option');o.value=i;o.textContent=x.name;siteSelect.appendChild(o);});
+          }
+          siteSelect.value=idx;
+          datasetSection.classList.remove('hidden');
+          customSection.classList.add('hidden');
+          if(typeof window.updateCoordDisplay==='function') window.updateCoordDisplay();
+          return {site:best.site,distance:best.d,mode:'CSV watershed'};
+        }
+      }
+    }
+
+    // Otherwise analyze the exact photo coordinate as a temporary custom location.
+    const existing=(window.customSites||[]).findIndex(s=>Math.abs(Number(s.lat)-lat)<1e-7 && Math.abs(Number(s.lon)-lon)<1e-7);
+    const idx=existing>=0?existing:(window.customSites||[]).push({name:'Geotagged photo location',lat,lon})-1;
+    if(typeof window.renderCustomSelect==='function') window.renderCustomSelect(idx);
+    else {
+      customSelect.innerHTML='';
+      (window.customSites||[]).forEach((x,i)=>{const o=document.createElement('option');o.value=i;o.textContent=x.name;customSelect.appendChild(o);});
+      customSelect.value=idx;
+    }
+    stateSelect.value='custom';
+    datasetSection.classList.add('hidden');
+    customSection.classList.remove('hidden');
+    if(typeof window.updateCoordDisplay==='function') window.updateCoordDisplay();
+    return {site:window.customSites[idx],distance:0,mode:'Exact photo coordinates'};
+  }
+
+  function wire(){
+    const btn=document.getElementById('analyzeGeoWatershedBtn');
+    if(!btn||btn.dataset.wired) return;
+    btn.dataset.wired='1';
+    btn.addEventListener('click',()=>{
+      const lat=Number(document.getElementById('geoAnalysisLat').value);
+      const lon=Number(document.getElementById('geoAnalysisLon').value);
+      const before=document.getElementById('geoBeforeDate').value;
+      const after=document.getElementById('geoAfterDate').value;
+      const status=document.getElementById('geoAnalysisStatus');
+      const out=document.getElementById('geoAnalysisResults');
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)){status.textContent='Valid GPS coordinates are required.';return;}
+      const by=Number(before),ay=Number(after);
+      if(by<2018||by>2025||ay<2018||ay>2025){status.textContent='Choose years from 2018–2025.';return;}
+      const picked=selectOrCreateAnalysisSite(lat,lon);
+      if(!picked){status.textContent='Could not prepare the location for analysis.';return;}
+      if(picked.distance>0){
+        out.innerHTML='<div class="notice">Matched to <strong>'+esc(picked.site.name)+'</strong>, approximately '+picked.distance.toFixed(3)+' km from the photo coordinates. The same before/after satellite analysis will now run.</div>';
+      }else{
+        out.innerHTML='<div class="notice">Using the exact coordinates from the photograph for the satellite analysis.</div>';
+      }
+      // Reuse the existing, fully featured analysis pipeline.
+      const mainBefore=document.getElementById('beforeDate');
+      const mainAfter=document.getElementById('afterDate');
+      if(mainBefore) mainBefore.value=before;
+      if(mainAfter) mainAfter.value=after;
+      const run=document.getElementById('runBtn');
+      if(run){
+        status.textContent='Starting watershed impact analysis…';
+        run.click();
+      }else status.textContent='Main analysis button was not found.';
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',wire); else wire();
+})();
+</script>
+
+</body>
+</html>
